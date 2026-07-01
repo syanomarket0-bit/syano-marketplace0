@@ -98,8 +98,8 @@ endSection();
 
 startSection("Environment");
 console.log(`\n${B}Environment${RE}`);
-const required = ["DATABASE_URL", "SESSION_SECRET", "TURNSTILE_SECRET_KEY"];
-const optional = ["RESEND_API_KEY", "VAPID_PRIVATE_KEY"];
+const required = ["DATABASE_URL", "SESSION_SECRET", "TURNSTILE_SECRET_KEY", "RESEND_API_KEY"];
+const optional = ["VAPID_PRIVATE_KEY"];
 const shared   = ["API_PORT", "EMBEDDING_SERVICE_URL", "GOOGLE_CLIENT_ID",
                   "TURNSTILE_ENABLED", "TURNSTILE_SITE_KEY", "VAPID_PUBLIC_KEY"];
 

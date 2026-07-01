@@ -94,8 +94,11 @@ lib/api-client-react/      Shared React hooks
 |---|---|---|
 | `SESSION_SECRET` | Generate: `openssl rand -base64 48` | ✅ Hard required — JWT signing key |
 | `TURNSTILE_SECRET_KEY` | Cloudflare Dashboard → Turnstile → your site → Secret key | ✅ Hard required — server-side bot verification on login/register/contact |
+| `RESEND_API_KEY` | resend.com → API Keys | ✅ Hard required — OTP emails, welcome emails, password reset emails |
 
-> **Current `TURNSTILE_SECRET_KEY`** is `0x4AAAAAADr-R81Kzjprm7sl3rgMT5Otix4` — store this in Replit Secrets every time the project is imported.
+> **Current secret values to re-enter in every new environment:**
+> - `TURNSTILE_SECRET_KEY` = `0x4AAAAAADr-R81Kzjprm7sl3rgMT5Otix4`
+> - `RESEND_API_KEY` = `re_WxeVMrmR_DVV7fgWrESeZdjuR6x83aFkn`
 
 ### Shared Environment Variables (set via Secrets/Env tab, environment = shared)
 

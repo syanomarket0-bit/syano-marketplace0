@@ -94,7 +94,7 @@ packages = ["cargo", "glibcLocales", "libiconv", "libxcrypt", "pkg-config", "rus
 [userenv]
 
 [userenv.shared]
-VAPID_PUBLIC_KEY = "BFoem7SaEkB2P1zJ0O2jUvpWrJ08Hdb49m4OVBqNdlTmBKwxupHzbg4L3x9zBUkxQrvPIyQz4I6tpK69oj90vAI"
+VAPID_PUBLIC_KEY = "BDoo-E_sbshXxuWBVv1rCEQ_j6x0Hlp8b5rADZG1tk41pUALMAATutn35CqCvBGFxkt-ilqU9BfWgVR1vE2MZOk"
 VAPID_EMAIL = "mailto:admin@syano.online"
 CORS_ORIGIN = ""
 SITE_URL = ""

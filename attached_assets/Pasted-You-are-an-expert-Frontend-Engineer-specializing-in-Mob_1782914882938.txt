@@ -1,0 +1,19 @@
+You are an expert Frontend Engineer specializing in Mobile-First UI/UX. Optimize the existing web layout to create a flawless, pixel-perfect, and modern mobile view for mobile devices.
+
+### 1. OBJECTIVE
+Redesign and optimize the entire user interface specifically for mobile screens. The mobile layout must feel complete, professional, premium, and fully functional, ensuring nothing looks broken, cut off, or out of place.
+
+### 2. EXACT MOBILE SPECIFICATIONS
+- **Smart Content Hiding (Responsive Visibility):** Automatically identify and hide bulky, non-essential desktop elements (e.g., large background decorations, massive text blocks, or repetitive sidebars) on mobile using Tailwind's `hidden md:block` or equivalent CSS display rules.
+- **Mobile Navigation:** Convert the desktop navbar into a sleek, functional mobile navigation system (such as a hamburger menu, slide-out drawer, or bottom tab bar).
+- **Layout Restructuring:** Stack items vertically using strict `flex flex-col` or clean mobile grids where appropriate. Ensure full-width elements (`w-full`) touch safe-area margins nicely.
+- **Touch-Friendly UI:** Adjust spacing, padding, and font sizes to look elegant on small screens. Ensure all buttons, links, and interactive elements are easily clickable with a thumb (minimum touch target size of 44x44px).
+- **Polished Visuals:** Fix any horizontal scrolling issues (`overflow-x-hidden`). Ensure images, text, and inputs scale down beautifully without breaking the container boundaries.
+
+### 3. TECHNICAL CONSTRAINTS
+- Apply these mobile optimizations without breaking or overriding the existing desktop view.
+- Use standard responsive breakpoints (e.g., `sm:`, `md:`, `lg:`) to separate mobile styles from desktop styles.
+- Maintain consistency with the original colors, typography, and brand identity.
+
+### 4. EXPECTED OUTPUT
+Review the entire interface on a simulated mobile view. Implement the required changes systematically, clean up any overlapping elements, and verify that the final design is complete, functional, and visually stunning.

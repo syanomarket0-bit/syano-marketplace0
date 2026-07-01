@@ -1,0 +1,1475 @@
+// @refresh reset
+/**
+ * LuxuryNavbar.tsx
+ * Full-featured navbar with ALL original interactive elements, skinned in the
+ * luxury dark design: charcoal #0B0B0C background, white capsule buttons,
+ * Noto Naskh Arabic branding, Noto Sans Arabic for links.
+ *
+ * Restores: Search (with suggestions/trending/recent), Location selector,
+ * Auth (Login/Register + user avatar dropdown with role-based links),
+ * Wishlist, Cart (with count badges), Notifications, Messages,
+ * Language switcher, Currency toggle, Theme toggle, Mobile Sheet sidebar.
+ */
+import React, { useState, useRef, useEffect, useCallback, useMemo } from "react";
+import { createPortal } from "react-dom";
+import { Link, useLocation } from "wouter";
+import { motion } from "framer-motion";
+import { useAuth } from "@/contexts/AuthContext";
+import { useAuthModal } from "@/contexts/AuthModalContext";
+import { useCurrency } from "@/contexts/CurrencyContext";
+import { useGuestCart } from "@/contexts/GuestCartContext";
+import {
+  Sheet, SheetContent, SheetTitle, SheetTrigger,
+} from "@/components/ui/sheet";
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem,
+  DropdownMenuTrigger, DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import {
+  ShoppingCart, LogOut, LayoutDashboard, Search, X, Globe, Sun,
+  DollarSign, Menu, Home, Package, ClipboardList, Warehouse, Clock,
+  MessageCircle, Users, Store, BarChart2, ScrollText, Settings,
+  Heart, ChevronDown, Bike, TrendingUp, Layers, MapPin, User, Moon,
+} from "lucide-react";
+import { useTheme } from "next-themes";
+import {
+  useGetCart, getGetCartQueryKey, useGetUnreadCount, useGetDeliveryZones,
+} from "@workspace/api-client-react";
+import { LocationMapModal } from "@/components/LocationMapModal";
+import { loadSavedZoneId } from "@/lib/location-storage";
+import { NotificationCenter } from "@/components/NotificationCenter";
+import { useWishlist } from "@/contexts/WishlistContext";
+import { useTranslation } from "react-i18next";
+import { applyDirection } from "@/i18n";
+import { useDebounce } from "@/hooks/use-debounce";
+import { cn } from "@/lib/utils";
+import {
+  useSearchSuggestions, useSearchTrending, trackSearchClick,
+} from "@/hooks/use-search";
+
+/* ── Brand tokens ─────────────────────────────────────────────────────────────*/
+const BG        = "#0B0B0C";
+const WHITE     = "#FFFFFF";
+const MUTED     = "rgba(255,255,255,0.52)";
+const DIMMED    = "rgba(255,255,255,0.28)";
+const BORDER    = "rgba(255,255,255,0.08)";
+const BORDER_H  = "rgba(255,255,255,0.16)";
+const GREEN     = "#16A34A";
+const DROP_BG   = "rgba(14,14,16,0.98)";
+/* ── Navbar background — site primary (CSS --primary: 114 50% 26%).
+   Fixed across both light and dark themes (--primary is theme-invariant).
+   White text on this green = 6.45:1 → WCAG AA all sizes. ─────────────────*/
+const NAV_GREEN = "hsl(114, 50%, 26%)";
+/* ── Premium glass surface tokens ─────────────────────────────────────────────*/
+const NAV_BG_DARK  = "rgba(10,10,12,0.90)";
+const NAV_BG_LIGHT = "rgba(252,252,254,0.90)";
+const NAV_SHADOW_D = "0 8px 48px rgba(0,0,0,0.75), 0 1px 0 rgba(255,255,255,0.05)";
+const NAV_SHADOW_L = "0 8px 32px rgba(0,0,0,0.10), 0 1px 0 rgba(0,0,0,0.05)";
+const BTN_GRADIENT = "linear-gradient(135deg, hsl(114,52%,23%) 0%, hsl(142,56%,30%) 100%)";
+const BTN_SHADOW   = "0 4px 18px rgba(22,163,74,0.42), 0 1px 4px rgba(22,163,74,0.18)";
+const BTN_SHADOW_H = "0 6px 28px rgba(22,163,74,0.58), 0 2px 10px rgba(22,163,74,0.28)";
+const ACCENT_LINE  = "linear-gradient(90deg, transparent 0%, rgba(22,163,74,0.55) 20%, rgba(34,197,94,1.0) 50%, rgba(22,163,74,0.55) 80%, transparent 100%)";
+
+/* ── Fonts ────────────────────────────────────────────────────────────────────*/
+const F_NASKH = "'Noto Naskh Arabic', serif";
+const F_SANS  = "'Noto Sans Arabic', sans-serif";
+
+/* ── Mobile nav link ──────────────────────────────────────────────────────────*/
+interface MobLinkProps {
+  href: string;
+  icon: React.ElementType;
+  label: string;
+  loc: string;
+  onClose: () => void;
+}
+const MobLink = React.memo(function MobLink({ href, icon: Icon, label, loc, onClose }: MobLinkProps) {
+  const active = loc === href || (href !== "/" && loc.startsWith(href));
+  return (
+    <Link href={href} onClick={onClose}>
+      <div className={cn(
+        "flex items-center gap-3 px-3 rounded-xl text-sm font-medium transition-colors min-h-[44px]",
+        active
+          ? "dark:bg-white/[0.08] dark:text-white bg-black/[0.06] text-gray-900"
+          : "dark:text-white/55 dark:hover:text-white dark:hover:bg-white/[0.05] text-gray-500 hover:text-gray-900 hover:bg-black/[0.05]",
+      )}
+        style={{ fontFamily: F_SANS }}
+      >
+        <Icon className="h-[1.0625rem] w-[1.0625rem] shrink-0" />
+        {label}
+      </div>
+    </Link>
+  );
+});
+
+/* ── Icon capsule button ──────────────────────────────────────────────────────*/
+const IconCapsule = React.forwardRef<
+  HTMLButtonElement,
+  React.ButtonHTMLAttributes<HTMLButtonElement> & { badge?: number | string }
+>(function IconCapsule({ children, badge, className, ...rest }, ref) {
+  return (
+    <button
+      ref={ref}
+      className={cn(
+        "relative h-10 w-10 flex items-center justify-center rounded-full",
+        "bg-white text-[#0B0B0C]",
+        "hover:scale-105 active:scale-95 transition-transform duration-150",
+        className,
+      )}
+      {...rest}
+    >
+      {children}
+      {badge !== undefined && Number(badge) > 0 && (
+        <span
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            top: "-2px",
+            insetInlineEnd: "-2px",
+            minWidth: "1rem",
+            height: "1rem",
+            borderRadius: "9999px",
+            background: GREEN,
+            color: WHITE,
+            fontSize: "8px",
+            fontWeight: 800,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "0 3px",
+            pointerEvents: "none",
+          }}
+        >
+          {Number(badge) > 99 ? "99+" : badge}
+        </span>
+      )}
+    </button>
+  );
+});
+
+/* ── Main component ───────────────────────────────────────────────────────────*/
+export function LuxuryNavbar() {
+  const [location, navigate] = useLocation();
+  const { user, logout, isAuthenticated, isCustomer, isSeller, isAdmin, isCourier } = useAuth();
+  const { openLogin } = useAuthModal();
+  const { count: wishlistCount } = useWishlist();
+  const { setTheme, theme, resolvedTheme } = useTheme();
+  const { currency, setCurrency } = useCurrency();
+  const { t, i18n } = useTranslation();
+  const lang = i18n.language;
+  const isRtl = lang === "ar";
+  const isDark = resolvedTheme !== "light";
+
+  /* ── Adaptive nav tokens (change with theme) ───────────────────────────── */
+  const navFg       = isDark ? WHITE : "#111827";
+  const navMutedFg  = isDark ? MUTED : "#6B7280";
+  const navBorder_  = isDark ? BORDER : "rgba(0,0,0,0.07)";
+  const navBorderH_ = isDark ? BORDER_H : "rgba(0,0,0,0.14)";
+  const searchBg_   = isDark ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.05)";
+  const searchBgHov_= isDark ? "rgba(255,255,255,0.10)" : "rgba(0,0,0,0.08)";
+  const iconHovBg_  = "rgba(22,163,74,0.13)";
+  const dropBg_     = isDark ? DROP_BG : "var(--background)";
+  const dropText_   = isDark ? "rgba(255,255,255,0.85)" : "#111827";
+  const dropMuted_  = isDark ? MUTED : "#6B7280";
+  const dropDimmed_ = isDark ? DIMMED : "#9CA3AF";
+
+  /* ── State ── */
+  const [searchOpen,      setSearchOpen]      = useState(false);
+  const [searchQuery,     setSearchQuery]     = useState("");
+  const [mobileMenuOpen,  setMobileMenuOpen]  = useState(false);
+  const [locationModalOpen, setLocationModalOpen] = useState(false);
+  const [selectedZoneId,  setSelectedZoneId]  = useState<number | null>(loadSavedZoneId);
+  const [highlightedIdx,  setHighlightedIdx]  = useState(-1);
+  const [scrolled,        setScrolled]        = useState(false);
+
+  const debouncedQ    = useDebounce(searchQuery, 200);
+  const searchRef     = useRef<HTMLDivElement>(null);
+  const inputRef      = useRef<HTMLInputElement>(null);
+  const flatItemsRef  = useRef<Array<{ id: string; action: () => void }>>([]);
+  const closeMobile   = useCallback(() => setMobileMenuOpen(false), []);
+
+  /* ── Data ── */
+  const { data: zones = [] }  = useGetDeliveryZones({ staleTime: 10 * 60 * 1000 });
+  const selectedZone           = zones.find(z => z.id === selectedZoneId) ?? null;
+  const { data: cart }         = useGetCart({ query: { queryKey: getGetCartQueryKey(), enabled: isCustomer } });
+  const cartCount              = cart?.itemCount ?? 0;
+  const { guestTotal }         = useGuestCart();
+  const visibleCart            = isAuthenticated ? cartCount : guestTotal;
+  const { data: unreadData }   = useGetUnreadCount({
+    query: { queryKey: ["/api/conversations/unread-count"] as const, enabled: isAuthenticated, refetchInterval: 15_000 },
+  });
+  const unreadMsgs             = unreadData?.unread ?? 0;
+  const { suggestions, isLoading: searchLoading } = useSearchSuggestions(debouncedQ);
+  const trending               = useSearchTrending();
+
+  /* ── Recent searches ── */
+  const [recentSearches, setRecentSearches] = useState<string[]>(() => {
+    try { return JSON.parse(localStorage.getItem("syano_recent_searches") || "[]"); } catch { return []; }
+  });
+
+  const saveRecent = useCallback((q: string) => {
+    const t = q.trim();
+    if (!t || t.length < 2) return;
+    setRecentSearches(prev => {
+      const next = [t, ...prev.filter(s => s !== t)].slice(0, 6);
+      try { localStorage.setItem("syano_recent_searches", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
+  const clearRecent = useCallback(() => {
+    setRecentSearches([]);
+    try { localStorage.removeItem("syano_recent_searches"); } catch {}
+  }, []);
+  const removeRecent = useCallback((q: string) => {
+    setRecentSearches(prev => {
+      const next = prev.filter(s => s !== q);
+      try { localStorage.setItem("syano_recent_searches", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, []);
+
+  /* ── Handlers ── */
+  const switchLang = (l: string) => { i18n.changeLanguage(l); applyDirection(l); };
+  useEffect(() => { applyDirection(i18n.language); }, [i18n.language]);
+  useEffect(() => { if (searchOpen && inputRef.current) inputRef.current.focus(); }, [searchOpen]);
+
+  /* Scroll shadow */
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 6);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  /* Mobile scroll-lock */
+  useEffect(() => {
+    if (!window.matchMedia("(max-width:767px)").matches) return;
+    document.body.style.overflow = searchOpen ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [searchOpen]);
+
+  /* Close search on outside click */
+  useEffect(() => {
+    const h = (e: MouseEvent) => {
+      if (!searchRef.current?.contains(e.target as Node)) { setSearchOpen(false); setSearchQuery(""); }
+    };
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, []);
+
+  /* Sync zone from modal */
+  useEffect(() => {
+    const h = (e: Event) => setSelectedZoneId((e as CustomEvent<{ zoneId: number | null }>).detail.zoneId);
+    window.addEventListener("syano:location-updated", h);
+    return () => window.removeEventListener("syano:location-updated", h);
+  }, []);
+
+  /* Reset highlight when query changes */
+  useEffect(() => { setHighlightedIdx(-1); }, [debouncedQ]);
+
+  /* Scroll highlighted item */
+  useEffect(() => {
+    if (highlightedIdx >= 0) {
+      const id = flatItemsRef.current[highlightedIdx]?.id;
+      if (id) document.getElementById(id)?.scrollIntoView({ block: "nearest" });
+    }
+  }, [highlightedIdx]);
+
+  const handleSearchSubmit = useCallback((e: React.FormEvent) => {
+    e.preventDefault();
+    if (searchQuery.trim()) {
+      saveRecent(searchQuery.trim());
+      navigate(`/shop?q=${encodeURIComponent(searchQuery.trim())}`);
+      setSearchOpen(false); setSearchQuery("");
+    }
+  }, [searchQuery, navigate, saveRecent]);
+
+  const handleSuggClick = useCallback((text: string, type: "suggestion" | "category" | "store" = "suggestion") => {
+    saveRecent(text);
+    trackSearchClick(text, type);
+    navigate(`/shop?q=${encodeURIComponent(text)}`);
+    setSearchOpen(false); setSearchQuery("");
+  }, [navigate, saveRecent]);
+
+  const handleSearchKD = useCallback((e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Escape") { setSearchOpen(false); setSearchQuery(""); setHighlightedIdx(-1); return; }
+    const items = flatItemsRef.current;
+    if (!searchOpen || !items.length) return;
+    if (e.key === "ArrowDown") { e.preventDefault(); setHighlightedIdx(p => Math.min(p + 1, items.length - 1)); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); setHighlightedIdx(p => Math.max(p - 1, -1)); }
+    else if (e.key === "Enter" && highlightedIdx >= 0 && items[highlightedIdx]) { e.preventDefault(); items[highlightedIdx].action(); }
+  }, [searchOpen, highlightedIdx]);
+
+  /* Flat items for keyboard nav */
+  const _suggs = (suggestions.suggestions ?? []).slice(0, 6);
+  const _stores = (suggestions.stores ?? []).slice(0, 3);
+
+  useEffect(() => {
+    if (!searchOpen) { flatItemsRef.current = []; return; }
+    if (debouncedQ.length < 2) {
+      flatItemsRef.current = recentSearches.map((s, i) => ({ id: `lnav-opt-${i}`, action: () => setSearchQuery(s) }));
+      return;
+    }
+    const items: Array<{ id: string; action: () => void }> = [];
+    _suggs.forEach((s, i) => {
+      const text = isRtl && s.textAr ? s.textAr : s.text;
+      items.push({ id: `lnav-opt-${i}`, action: () => handleSuggClick(text) });
+    });
+    _stores.forEach((s, i) => {
+      items.push({
+        id: `lnav-opt-${_suggs.length + i}`,
+        action: () => {
+          trackSearchClick(s.storeName, "store");
+          navigate(s.storeSlug ? `/store/${s.storeSlug}` : `/shop?sellerId=${s.userId}`);
+          setSearchOpen(false); setSearchQuery("");
+        },
+      });
+    });
+    items.push({
+      id: `lnav-opt-${_suggs.length + _stores.length}`,
+      action: () => {
+        if (debouncedQ.trim()) { saveRecent(debouncedQ.trim()); navigate(`/shop?q=${encodeURIComponent(debouncedQ.trim())}`); setSearchOpen(false); setSearchQuery(""); }
+      },
+    });
+    flatItemsRef.current = items;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchOpen, debouncedQ, suggestions, recentSearches, isRtl]);
+
+  /* ── Role-based links ── */
+  const sellerLinks = useMemo(() => [
+    { href: "/seller/dashboard", icon: LayoutDashboard, label: t("nav.dashboard") },
+    { href: "/seller/products",  icon: Package,          label: t("nav.products")  },
+    { href: "/seller/orders",    icon: ClipboardList,    label: t("nav.orders")    },
+    { href: "/seller/inventory", icon: Warehouse,        label: t("nav.inventory") },
+  ], [t]);
+
+  const adminLinks = useMemo(() => [
+    { href: "/admin",          icon: LayoutDashboard, label: t("admin.nav_dashboard") },
+    { href: "/admin/users",    icon: Users,           label: t("admin.nav_users")    },
+    { href: "/admin/sellers",  icon: Store,           label: t("admin.nav_sellers")  },
+    { href: "/admin/products", icon: Package,         label: t("admin.nav_products") },
+    { href: "/admin/orders",   icon: ShoppingCart,    label: t("admin.nav_orders")   },
+    { href: "/admin/analytics",icon: BarChart2,       label: t("admin.nav_analytics")},
+    { href: "/admin/logs",     icon: ScrollText,      label: t("admin.nav_logs")     },
+    { href: "/admin/settings", icon: Settings,        label: t("admin.nav_settings") },
+  ], [t]);
+
+  const customerLinks = useMemo(() => [
+    { href: "/customer/dashboard", icon: LayoutDashboard, label: t("nav.dashboard") },
+    { href: "/orders",             icon: ClipboardList,   label: t("nav.orders")    },
+  ], [t]);
+
+  /* ── Shared dropdown token (dark-only — used for auth + search dropdowns) ── */
+  const dropStyle: React.CSSProperties = {
+    background: DROP_BG,
+    border: `1px solid ${BORDER_H}`,
+  };
+
+  /* ── Settings dropdown: theme-adaptive surface tokens ────────────────────── */
+  const settingsDropStyle: React.CSSProperties = {
+    background: isDark ? "hsl(0, 0%, 11%)" : "hsl(220, 14%, 91%)",
+    border: `1px solid ${isDark ? "hsl(0, 0%, 19%)" : "hsl(220, 13%, 80%)"}`,
+  };
+  /* Button states inside settings dropdown */
+  const sBtnSelBg = "hsl(var(--primary))";                        /* selected pill bg — always primary green */
+  const sBtnSelFg = "#ffffff";                                    /* selected pill text — always white */
+  const sBtnUnsBg = isDark ? "rgba(255,255,255,0.07)" : "hsl(220, 16%, 94%)"; /* idle */
+  const sBtnUnsFg = isDark ? MUTED : "#3D4554";
+  const sBtnHovBg = isDark ? "rgba(255,255,255,0.12)" : "hsl(220, 13%, 88%)"; /* hover */
+  const sBtnHovFg = isDark ? WHITE : "#111827";
+  const sPanelDim = isDark ? DIMMED : "#3D4554";                  /* section label */
+  const sPanelSep = isDark ? BORDER : "hsl(220, 13%, 84%)";       /* divider */
+  /* Auth user dropdown tokens */
+  const aDropFg   = isDark ? WHITE                   : "#111827";  /* name/primary text */
+  const aDropSub  = isDark ? MUTED                   : "#3D4554";  /* email/secondary text */
+  const aDropItem = isDark ? "rgba(255,255,255,0.80)": "#374151";  /* nav link text */
+  const aDropDang = isDark ? "#f87171"               : "#dc2626";  /* logout (danger red) */       /* divider */
+
+  return (
+    <>
+      {/* ── Global navbar animations ──────────────────────────────────────────── */}
+      <style>{`
+        @keyframes syano-accent-shimmer {
+          0%,100% { opacity: 0.85; }
+          50%      { opacity: 1; }
+        }
+        @keyframes syano-btn-glow {
+          0%,100% { box-shadow: 0 4px 18px rgba(22,163,74,0.42), 0 1px 4px rgba(22,163,74,0.18); }
+          50%     { box-shadow: 0 6px 28px rgba(22,163,74,0.62), 0 2px 10px rgba(22,163,74,0.28); }
+        }
+        .syano-login-btn { animation: syano-btn-glow 3s ease-in-out infinite; }
+        .syano-login-btn:hover { animation: none !important; }
+        .syano-icon-btn { transition: background 0.18s ease, color 0.18s ease, transform 0.15s ease !important; }
+        .syano-icon-btn:hover { transform: scale(1.08) !important; }
+        .syano-icon-btn:active { transform: scale(0.94) !important; }
+
+        /* Logo text — gradient changes atomically via CSS class, not React state */
+        .syano-logo-text {
+          display: inline-block;
+          background: linear-gradient(135deg, #0f172a 0%, #15803d 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+        }
+        html.dark .syano-logo-text {
+          background: linear-gradient(135deg, #ffffff 0%, #bbf7d0 100%);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+        }
+      `}</style>
+
+      {/* Floating header — fixed to viewport top */}
+      <header
+        style={{
+          position: "fixed",
+          top: 0,
+          left: 0,
+          right: 0,
+          width: "100%",
+          zIndex: 1000,
+          fontFamily: F_SANS,
+          background: isDark ? NAV_BG_DARK : NAV_BG_LIGHT,
+          backdropFilter: "blur(22px) saturate(180%)",
+          WebkitBackdropFilter: "blur(22px) saturate(180%)",
+          borderBottom: `1px solid ${isDark ? "rgba(255,255,255,0.07)" : "rgba(0,0,0,0.07)"}`,
+          boxShadow: scrolled ? (isDark ? NAV_SHADOW_D : NAV_SHADOW_L) : "none",
+          transition: "box-shadow 0.3s ease",
+        }}
+      >
+        {/* ── Top gradient accent line with shimmer ─────────────────────────── */}
+        <div aria-hidden="true" style={{ position: "absolute", top: 0, insetInlineStart: 0, insetInlineEnd: 0, height: "2px", background: ACCENT_LINE, pointerEvents: "none", zIndex: 2, animation: "syano-accent-shimmer 4s ease-in-out infinite" }} />
+
+        <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+
+          {/* ══ MOBILE TOP BAR (< md) ════════════════════════════════════════ */}
+          <div
+            className="md:hidden flex h-[3.75rem] items-center justify-between px-4 gap-2"
+            dir={isRtl ? "rtl" : "ltr"}
+          >
+            {/* Logo */}
+            <Link href="/" className="flex items-center gap-2 shrink-0" aria-label="Syano home">
+              <img
+                src="/syano-logo.png" alt="" width={40} height={40}
+                className="object-contain shrink-0"
+                style={{ height: 40, width: 40, filter: isDark ? "drop-shadow(0 0 10px rgba(34,197,94,0.25))" : "drop-shadow(0 2px 6px rgba(0,0,0,0.15))" }}
+                loading="eager"
+              />
+              <span className="syano-logo-text" style={{
+                fontFamily: F_NASKH, fontWeight: 900, letterSpacing: "0.12em", fontSize: "1.375rem", lineHeight: 1,
+              }}>
+                SYANO
+              </span>
+            </Link>
+
+            {/* Right icons */}
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setSearchOpen(!searchOpen)}
+                aria-label={t("a11y.search")}
+                className="h-9 w-9 flex items-center justify-center rounded-full text-foreground hover:bg-green-600/[0.13] transition-colors"
+              >
+                <Search className="h-4 w-4" />
+              </button>
+              {isAuthenticated && (
+                <NotificationCenter btnClassName="h-9 w-9 flex items-center justify-center rounded-full text-foreground hover:bg-green-600/[0.13] transition-colors" />
+              )}
+              {isAuthenticated && !isCourier && (
+                <Link
+                  href={isAdmin ? "/admin/messages" : isSeller ? "/seller/messages" : "/messages"}
+                  className="relative h-9 w-9 flex items-center justify-center rounded-full text-foreground hover:bg-green-600/[0.13] transition-colors"
+                  aria-label={isRtl ? "الرسائل" : "Messages"}
+                >
+                  <MessageCircle className="h-4 w-4" />
+                  {unreadMsgs > 0 && (
+                    <span style={{ position: "absolute", top: -2, insetInlineEnd: -2, minWidth: "1rem", height: "1rem", borderRadius: 9999, background: GREEN, color: WHITE, fontSize: "8px", fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      {unreadMsgs > 9 ? "9+" : unreadMsgs}
+                    </span>
+                  )}
+                </Link>
+              )}
+              {!isSeller && !isAdmin && !isCourier && (
+                <Link href="/wishlist" aria-label={t("a11y.wishlist")}
+                  className="relative h-9 w-9 flex items-center justify-center rounded-full text-foreground hover:bg-green-600/[0.13] transition-colors">
+                  <Heart className="h-4 w-4" />
+                  {wishlistCount > 0 && (
+                    <span style={{ position: "absolute", top: -2, insetInlineEnd: -2, minWidth: "1rem", height: "1rem", borderRadius: 9999, background: "#f43f5e", color: WHITE, fontSize: "8px", fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      {wishlistCount > 99 ? "99+" : wishlistCount}
+                    </span>
+                  )}
+                </Link>
+              )}
+              {!isSeller && !isAdmin && !isCourier && (
+                <Link href="/cart" aria-label={t("a11y.openCart")}
+                  className="relative h-9 w-9 flex items-center justify-center rounded-full text-foreground hover:bg-green-600/[0.13] transition-colors">
+                  <ShoppingCart className="h-4 w-4" />
+                  {visibleCart > 0 && (
+                    <span style={{ position: "absolute", top: -2, insetInlineEnd: -2, minWidth: "1rem", height: "1rem", borderRadius: 9999, background: GREEN, color: WHITE, fontSize: "8px", fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      {visibleCart}
+                    </span>
+                  )}
+                </Link>
+              )}
+              <SheetTrigger asChild>
+                <button aria-label={t("a11y.openMenu")}
+                  className="h-9 w-9 flex items-center justify-center rounded-full text-foreground hover:bg-green-600/[0.13] transition-colors">
+                  <Menu className="h-4 w-4" />
+                </button>
+              </SheetTrigger>
+            </div>
+          </div>
+
+          {/* ══ MOBILE SEARCH PILL ROW (< md) ════════════════════════════════
+               Always-visible tappable pill that opens the full-screen search
+               overlay. Gives mobile users instant access to search without
+               hunting for the search icon.                                     */}
+          <div
+            className="md:hidden px-3 pb-2.5"
+            dir={isRtl ? "rtl" : "ltr"}
+          >
+            <button
+              type="button"
+              onClick={() => setSearchOpen(true)}
+              aria-label={t("a11y.search")}
+              style={{
+                width: "100%", display: "flex", alignItems: "center",
+                gap: "0.5rem", background: searchBg_,
+                borderRadius: 12, padding: "0.5625rem 0.875rem",
+                border: `1px solid ${navBorder_}`, cursor: "pointer",
+                textAlign: isRtl ? "right" : "left",
+                minHeight: 44,
+              }}
+            >
+              <Search style={{ height: 14, width: 14, color: navMutedFg, flexShrink: 0 }} />
+              <span style={{ fontFamily: F_SANS, fontSize: "0.875rem", color: navMutedFg, flex: 1 }}>
+                {isRtl ? "ابحث عن منتجات، متاجر..." : "Search products, stores..."}
+              </span>
+            </button>
+          </div>
+
+          {/* ══ DESKTOP NAV (≥ md) ════════════════════════════════════════════ */}
+          <div
+            className="hidden md:grid h-[3.75rem] items-center gap-3 px-8"
+            style={{ gridTemplateColumns: "auto 1fr auto" }}
+            dir={isRtl ? "rtl" : "ltr"}
+          >
+
+            {/* ── COL 1: Brand + Location ─────────────────────────────────── */}
+            <div className="flex items-center gap-2 shrink-0">
+              {/* Brand logo lockup — plain link, no pill chrome */}
+              <a
+                href="/"
+                onClick={(e) => { e.preventDefault(); navigate("/"); }}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                  textDecoration: "none",
+                }}
+                aria-label="Syano home"
+              >
+                <img
+                  src="/syano-logo.png" alt="Syano" width={44} height={44}
+                  style={{ height: 44, width: 44, objectFit: "contain", flexShrink: 0, filter: isDark ? "drop-shadow(0 0 12px rgba(34,197,94,0.28))" : "drop-shadow(0 2px 8px rgba(0,0,0,0.14))" }}
+                  loading="eager"
+                />
+                <span className="syano-logo-text" style={{
+                  fontFamily: F_NASKH, fontWeight: 900, letterSpacing: "0.13em", fontSize: "1.5rem", lineHeight: 1,
+                }}>
+                  SYANO
+                </span>
+              </a>
+
+              {/* Location selector */}
+              <button
+                type="button"
+                onClick={() => setLocationModalOpen(true)}
+                className="hidden lg:flex items-center gap-1.5 h-11 ps-2.5 pe-3 rounded-full transition-all duration-150"
+                style={{
+                  background: searchBg_,
+                  border: `1px solid ${navBorder_}`,
+                }}
+                aria-label={isRtl ? "تحديد موقع التوصيل" : "Set delivery location"}
+                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = searchBgHov_; (e.currentTarget as HTMLElement).style.borderColor = navBorderH_; }}
+                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = searchBg_; (e.currentTarget as HTMLElement).style.borderColor = navBorder_; }}
+              >
+                <MapPin style={{ height: 13, width: 13, color: GREEN, flexShrink: 0 }} />
+                <div style={{ textAlign: "start" }}>
+                  <div style={{ fontSize: "9px", fontWeight: 600, letterSpacing: "0.06em", color: navMutedFg, lineHeight: 1.2 }}>
+                    {t("nav.deliver_to")}
+                  </div>
+                  <div style={{ fontFamily: F_SANS, fontSize: "11px", fontWeight: 700, color: navFg, lineHeight: 1.3, maxWidth: 100 }} className="truncate">
+                    {selectedZone ? (isRtl ? selectedZone.nameAr : selectedZone.nameEn) : t("nav.select_location")}
+                  </div>
+                </div>
+              </button>
+            </div>
+
+            {/* ── COL 2: Amazon-style mega search bar ──────────────────────── */}
+            <div className="flex items-center flex-1 min-w-0 px-3" ref={searchRef}>
+
+              {/* Search bar — fills entire center column */}
+              <div className="relative flex-1 w-full">
+                <form onSubmit={handleSearchSubmit}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "0.5rem",
+                      height: "2.75rem",
+                      padding: "0 1rem",
+                      borderRadius: "14px",
+                      background: searchBg_,
+                      border: `1px solid ${searchOpen ? "rgba(22,163,74,0.50)" : navBorder_}`,
+                      transition: "background 0.2s, border-color 0.25s, box-shadow 0.25s",
+                      width: "100%",
+                      boxShadow: searchOpen
+                        ? "0 0 0 2.5px rgba(22,163,74,0.20), 0 4px 20px rgba(0,0,0,0.14)"
+                        : "none",
+                    }}
+                    onMouseEnter={e => { if (!searchOpen) (e.currentTarget as HTMLElement).style.background = searchBgHov_; }}
+                    onMouseLeave={e => { if (!searchOpen) (e.currentTarget as HTMLElement).style.background = searchBg_; }}
+                  >
+                    <Search style={{ height: 14, width: 14, color: navFg, flexShrink: 0 }} />
+                    <input
+                      ref={inputRef}
+                      value={searchQuery}
+                      onChange={e => { setSearchQuery(e.target.value); setSearchOpen(true); }}
+                      onFocus={() => setSearchOpen(true)}
+                      onKeyDown={handleSearchKD}
+                      placeholder={isRtl ? "ابحث..." : "Search..."}
+                      role="combobox"
+                      aria-expanded={searchOpen}
+                      aria-autocomplete="list"
+                      aria-controls="lnav-search-listbox"
+                      aria-activedescendant={highlightedIdx >= 0 ? (flatItemsRef.current[highlightedIdx]?.id ?? undefined) : undefined}
+                      style={{
+                        fontFamily: F_SANS,
+                        fontSize: "0.8125rem",
+                        background: "transparent",
+                        outline: "none",
+                        border: "none",
+                        color: navFg,
+                        flex: 1,
+                        minWidth: 0,
+                      }}
+                    />
+                    {searchQuery && (
+                      <button type="button" aria-label={t("a11y.close")}
+                        onClick={() => { setSearchQuery(""); setSearchOpen(false); }}
+                        style={{ color: navMutedFg, display: "flex", alignItems: "center" }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = navFg; }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = navMutedFg; }}
+                      >
+                        <X style={{ height: 13, width: 13 }} />
+                      </button>
+                    )}
+                  </div>
+                </form>
+
+                {/* Search dropdown — full-width under the mega bar */}
+                {searchOpen && (debouncedQ.length >= 2 || recentSearches.length > 0 || trending.length > 0) && (
+                  <div
+                    id="lnav-search-listbox"
+                    role="listbox"
+                    style={{
+                      position: "absolute",
+                      top: "calc(100% + 6px)",
+                      insetInlineStart: 0,
+                      width: "100%",
+                      minWidth: "340px",
+                      background: dropBg_,
+                      border: `1px solid ${navBorderH_}`,
+                      borderRadius: "1rem",
+                      boxShadow: isDark ? "0 24px 64px rgba(0,0,0,0.75)" : "0 8px 32px rgba(0,0,0,0.12)",
+                      overflow: "hidden",
+                      zIndex: 60,
+                    }}
+                  >
+                    {debouncedQ.length >= 2 ? (
+                      searchLoading ? (
+                        <div style={{ padding: "0.5rem 0" }}>
+                          {[0, 1, 2].map(i => (
+                            <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.625rem 1rem" }}>
+                              <div style={{ height: 12, width: 12, borderRadius: "50%", background: BORDER, flexShrink: 0 }} />
+                              <div style={{ height: 10, borderRadius: 6, background: BORDER, width: `${50 + i * 18}%` }} />
+                            </div>
+                          ))}
+                        </div>
+                      ) : (suggestions.suggestions?.length ?? 0) === 0 && (suggestions.stores?.length ?? 0) === 0 ? (
+                        <div style={{ padding: "1rem", fontSize: "0.8125rem", color: DIMMED, textAlign: "center" }}>
+                          {isRtl ? "لا توجد نتائج" : "No results found"}
+                        </div>
+                      ) : (
+                        <div style={{ maxHeight: "22rem", overflowY: "auto" }}>
+                          {/* Suggestions */}
+                          {_suggs.map((s, i) => {
+                            const text = isRtl && s.textAr ? s.textAr : s.text;
+                            const isHl = highlightedIdx === i;
+                            return (
+                              <button key={i} id={flatItemsRef.current[i]?.id ?? `lnav-opt-${i}`}
+                                role="option" aria-selected={isHl}
+                                onClick={() => handleSuggClick(text)}
+                                style={{
+                                  width: "100%", display: "flex", alignItems: "center", gap: "0.625rem",
+                                  padding: "0.6rem 1rem", background: isHl ? iconHovBg_ : "transparent",
+                                  textAlign: isRtl ? "right" : "left", cursor: "pointer",
+                                  transition: "background 0.12s",
+                                }}
+                                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = iconHovBg_; }}
+                                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = isHl ? iconHovBg_ : "transparent"; }}
+                              >
+                                <Search style={{ height: 13, width: 13, color: dropDimmed_, flexShrink: 0 }} />
+                                <span style={{ fontFamily: F_SANS, fontSize: "0.8125rem", color: dropText_, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  {text}
+                                </span>
+                              </button>
+                            );
+                          })}
+                          {/* Stores */}
+                          {_stores.length > 0 && (
+                            <>
+                              <div style={{ padding: "0.5rem 1rem 0.3rem", borderTop: `1px solid ${navBorder_}`, display: "flex", alignItems: "center", gap: "0.375rem" }}>
+                                <Store style={{ height: 11, width: 11, color: dropDimmed_ }} />
+                                <span style={{ fontFamily: F_SANS, fontSize: "9px", fontWeight: 700, letterSpacing: "0.1em", color: dropDimmed_, textTransform: "uppercase" }}>
+                                  {isRtl ? "متاجر" : "Stores"}
+                                </span>
+                              </div>
+                              {_stores.map((s, i) => {
+                                const sIdx = _suggs.length + i;
+                                const isHl = highlightedIdx === sIdx;
+                                return (
+                                  <button key={s.userId} id={flatItemsRef.current[sIdx]?.id ?? `lnav-opt-${sIdx}`}
+                                    role="option" aria-selected={isHl}
+                                    onClick={() => { trackSearchClick(s.storeName, "store"); navigate(s.storeSlug ? `/store/${s.storeSlug}` : `/shop?sellerId=${s.userId}`); setSearchOpen(false); setSearchQuery(""); }}
+                                    style={{
+                                      width: "100%", display: "flex", alignItems: "center", gap: "0.625rem",
+                                      padding: "0.5rem 1rem", background: isHl ? iconHovBg_ : "transparent",
+                                      cursor: "pointer", transition: "background 0.12s",
+                                    }}
+                                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = iconHovBg_; }}
+                                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = isHl ? iconHovBg_ : "transparent"; }}
+                                  >
+                                    {s.storeLogo
+                                      ? <img src={s.storeLogo} alt="" style={{ height: 28, width: 28, borderRadius: 8, objectFit: "cover", border: `1px solid ${navBorder_}`, flexShrink: 0 }} />
+                                      : <div style={{ height: 28, width: 28, borderRadius: 8, background: "rgba(22,163,74,0.12)", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}><Store style={{ height: 13, width: 13, color: GREEN }} /></div>
+                                    }
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                      <div style={{ fontFamily: F_SANS, fontSize: "0.8125rem", fontWeight: 600, color: dropText_, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.storeName}</div>
+                                      {s.city && <div style={{ fontSize: 11, color: dropMuted_ }}>{s.city}</div>}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </>
+                          )}
+                          {/* See all */}
+                          <button
+                            onClick={handleSearchSubmit as React.MouseEventHandler}
+                            style={{
+                              width: "100%", display: "flex", alignItems: "center", gap: "0.5rem",
+                              padding: "0.75rem 1rem", borderTop: `1px solid ${navBorder_}`,
+                              color: GREEN, fontFamily: F_SANS, fontSize: "0.8125rem", fontWeight: 600,
+                              cursor: "pointer", background: "transparent", transition: "background 0.12s",
+                            }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = iconHovBg_; }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                          >
+                            <Search style={{ height: 13, width: 13 }} />
+                            {isRtl ? `عرض جميع النتائج لـ "${debouncedQ}"` : `See all results for "${debouncedQ}"`}
+                          </button>
+                        </div>
+                      )
+                    ) : (
+                      /* Recent + trending */
+                      <div style={{ paddingBottom: "0.5rem" }}>
+                        {recentSearches.length > 0 && (
+                          <>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0.625rem 1rem 0.3rem" }}>
+                              <span style={{ fontFamily: F_SANS, fontSize: "9px", fontWeight: 700, letterSpacing: "0.1em", color: dropDimmed_, textTransform: "uppercase", display: "flex", alignItems: "center", gap: "0.25rem" }}>
+                                <Clock style={{ height: 11, width: 11 }} /> {isRtl ? "البحث السابق" : "Recent"}
+                              </span>
+                              <button onClick={clearRecent} style={{ fontFamily: F_SANS, fontSize: "11px", color: dropMuted_, cursor: "pointer", background: "none", border: "none" }}
+                                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = dropText_; }}
+                                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = dropMuted_; }}>
+                                {isRtl ? "مسح الكل" : "Clear all"}
+                              </button>
+                            </div>
+                            {recentSearches.map(s => (
+                              <div key={s} style={{ display: "flex", alignItems: "center" }}
+                                onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = iconHovBg_; }}
+                                onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}>
+                                <button onClick={() => setSearchQuery(s)} style={{ flex: 1, display: "flex", alignItems: "center", gap: "0.625rem", padding: "0.5rem 1rem", background: "none", border: "none", cursor: "pointer", textAlign: isRtl ? "right" : "left" }}>
+                                  <Clock style={{ height: 13, width: 13, color: dropDimmed_, flexShrink: 0 }} />
+                                  <span style={{ fontFamily: F_SANS, fontSize: "0.8125rem", color: dropMuted_, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s}</span>
+                                </button>
+                                <button onClick={() => removeRecent(s)} style={{ padding: "0.5rem 0.875rem", color: dropDimmed_, background: "none", border: "none", cursor: "pointer" }}
+                                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = dropText_; }}
+                                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = dropDimmed_; }}>
+                                  <X style={{ height: 12, width: 12 }} />
+                                </button>
+                              </div>
+                            ))}
+                          </>
+                        )}
+                        {trending.length > 0 && (
+                          <>
+                            <div style={{ padding: "0.5rem 1rem 0.3rem", borderTop: recentSearches.length > 0 ? `1px solid ${navBorder_}` : "none", display: "flex", alignItems: "center", gap: "0.375rem" }}>
+                              <TrendingUp style={{ height: 11, width: 11, color: dropDimmed_ }} />
+                              <span style={{ fontFamily: F_SANS, fontSize: "9px", fontWeight: 700, letterSpacing: "0.1em", color: dropDimmed_, textTransform: "uppercase" }}>
+                                {isRtl ? "الأكثر بحثاً" : "Popular"}
+                              </span>
+                            </div>
+                            <div style={{ padding: "0 1rem 0.5rem", display: "flex", flexWrap: "wrap", gap: "0.375rem" }}>
+                              {trending.slice(0, 8).map(tr => (
+                                <button key={tr.query}
+                                  onClick={() => { navigate(`/shop?q=${encodeURIComponent(tr.query)}`); setSearchOpen(false); setSearchQuery(""); }}
+                                  style={{
+                                    fontFamily: F_SANS, fontSize: "0.75rem", fontWeight: 500,
+                                    padding: "0.25rem 0.75rem", borderRadius: 9999,
+                                    background: searchBg_, border: `1px solid ${navBorder_}`,
+                                    color: dropMuted_, cursor: "pointer", transition: "background 0.12s",
+                                  }}
+                                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = iconHovBg_; (e.currentTarget as HTMLElement).style.color = GREEN; }}
+                                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = searchBg_; (e.currentTarget as HTMLElement).style.color = dropMuted_; }}>
+                                  {tr.query}
+                                </button>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ── COL 3: Utilities + Auth ──────────────────────────────────── */}
+            <div className="flex items-center shrink-0" style={{ gap: "0.5rem" }}>
+
+              {/* Notifications */}
+              {isAuthenticated && (
+                <NotificationCenter btnClassName="h-9 w-9 flex items-center justify-center rounded-full transition-colors text-foreground hover:bg-green-600/[0.13]" />
+              )}
+
+              {/* Messages */}
+              {isAuthenticated && !isCourier && (
+                <Link
+                  href={isAdmin ? "/admin/messages" : isSeller ? "/seller/messages" : "/messages"}
+                  className="relative h-9 w-9 flex items-center justify-center rounded-full text-foreground hover:bg-green-600/[0.13] transition-colors"
+                  aria-label={t("nav.messages")}
+                >
+                  <MessageCircle style={{ height: 16, width: 16 }} />
+                  {unreadMsgs > 0 && (
+                    <span style={{ position: "absolute", top: -2, insetInlineEnd: -2, minWidth: "1rem", height: "1rem", borderRadius: 9999, background: GREEN, color: WHITE, fontSize: "8px", fontWeight: 800, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      {unreadMsgs > 9 ? "9+" : unreadMsgs}
+                    </span>
+                  )}
+                </Link>
+              )}
+
+              {/* Wishlist */}
+              {!isSeller && !isAdmin && !isCourier && (
+                <Link href="/wishlist" aria-label={t("a11y.wishlist")} style={{ display: "block" }}>
+                  <IconCapsule badge={wishlistCount} style={{ background: "transparent" }} className="hover:!bg-green-600/[0.13] !text-foreground">
+                    <Heart style={{ height: 15, width: 15 }} />
+                  </IconCapsule>
+                </Link>
+              )}
+
+              {/* Cart */}
+              {!isSeller && !isAdmin && !isCourier && (
+                <Link href="/cart" aria-label={t("a11y.openCart")} style={{ display: "block" }}>
+                  <IconCapsule badge={visibleCart} style={{ background: "transparent" }} className="hover:!bg-green-600/[0.13] !text-foreground">
+                    <ShoppingCart style={{ height: 15, width: 15 }} />
+                  </IconCapsule>
+                </Link>
+              )}
+
+              {/* Settings dropdown (Theme / Language / Currency) */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button
+                    aria-label={t("nav.settings")}
+                    className="h-9 w-9 flex items-center justify-center rounded-full text-foreground hover:bg-green-600/[0.13] transition-colors"
+                  >
+                    <Settings style={{ height: 15, width: 15 }} />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" sideOffset={8} className="p-0 overflow-hidden rounded-2xl w-52 shadow-2xl"
+                  style={settingsDropStyle}>
+
+                  {/* Theme */}
+                  <div style={{ padding: "0.75rem 0.875rem 0.625rem" }}>
+                    <p style={{ fontFamily: F_SANS, fontSize: "9px", fontWeight: 700, letterSpacing: "0.1em", color: sPanelDim, textTransform: "uppercase", marginBottom: "0.4rem", display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                      <Sun style={{ height: 11, width: 11 }} /> {isRtl ? "المظهر" : "Theme"}
+                    </p>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.25rem" }}>
+                      {([
+                        { val: "light" as const, ar: "فاتح",  en: "Light"  },
+                        { val: "dark"  as const, ar: "داكن",  en: "Dark"   },
+                        { val: "system"as const, ar: "تلقائي",en: "Auto"   },
+                      ]).map(opt => (
+                        <button key={opt.val} onClick={() => setTheme(opt.val)}
+                          style={{
+                            fontFamily: F_SANS, fontSize: "11px", fontWeight: 600,
+                            padding: "0.375rem 0.25rem", borderRadius: 8, cursor: "pointer", border: "none",
+                            background: theme === opt.val ? sBtnSelBg : sBtnUnsBg,
+                            color: theme === opt.val ? sBtnSelFg : sBtnUnsFg,
+                            transition: "background 0.15s, color 0.15s",
+                          }}
+                          onMouseEnter={e => { if (theme !== opt.val) { (e.currentTarget as HTMLElement).style.background = sBtnHovBg; (e.currentTarget as HTMLElement).style.color = sBtnHovFg; }}}
+                          onMouseLeave={e => { if (theme !== opt.val) { (e.currentTarget as HTMLElement).style.background = sBtnUnsBg; (e.currentTarget as HTMLElement).style.color = sBtnUnsFg; }}}>
+                          {isRtl ? opt.ar : opt.en}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ height: 1, background: sPanelSep, margin: "0 0.875rem" }} />
+
+                  {/* Language */}
+                  <div style={{ padding: "0.625rem 0.875rem" }}>
+                    <p style={{ fontFamily: F_SANS, fontSize: "9px", fontWeight: 700, letterSpacing: "0.1em", color: sPanelDim, textTransform: "uppercase", marginBottom: "0.4rem", display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                      <Globe style={{ height: 11, width: 11 }} /> {isRtl ? "اللغة" : "Language"}
+                    </p>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.25rem" }}>
+                      {[{ val: "ar", label: "العربية" }, { val: "en", label: "English" }].map(opt => (
+                        <button key={opt.val} onClick={() => switchLang(opt.val)}
+                          style={{
+                            fontFamily: F_SANS, fontSize: "11px", fontWeight: 600,
+                            padding: "0.375rem 0.25rem", borderRadius: 8, cursor: "pointer", border: "none",
+                            background: lang === opt.val ? sBtnSelBg : sBtnUnsBg,
+                            color: lang === opt.val ? sBtnSelFg : sBtnUnsFg,
+                            transition: "background 0.15s, color 0.15s",
+                          }}
+                          onMouseEnter={e => { if (lang !== opt.val) { (e.currentTarget as HTMLElement).style.background = sBtnHovBg; (e.currentTarget as HTMLElement).style.color = sBtnHovFg; }}}
+                          onMouseLeave={e => { if (lang !== opt.val) { (e.currentTarget as HTMLElement).style.background = sBtnUnsBg; (e.currentTarget as HTMLElement).style.color = sBtnUnsFg; }}}>
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ height: 1, background: sPanelSep, margin: "0 0.875rem" }} />
+
+                  {/* Currency */}
+                  <div style={{ padding: "0.625rem 0.875rem 0.875rem" }}>
+                    <p style={{ fontFamily: F_SANS, fontSize: "9px", fontWeight: 700, letterSpacing: "0.1em", color: sPanelDim, textTransform: "uppercase", marginBottom: "0.4rem", display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                      <DollarSign style={{ height: 11, width: 11 }} /> {isRtl ? "العملة" : "Currency"}
+                    </p>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "0.25rem" }}>
+                      {([{ val: "SYP" as const, label: "ل.س SYP" }, { val: "USD" as const, label: "$ USD" }]).map(opt => (
+                        <button key={opt.val} onClick={() => setCurrency(opt.val)}
+                          style={{
+                            fontFamily: F_SANS, fontSize: "11px", fontWeight: 600,
+                            padding: "0.375rem 0.25rem", borderRadius: 8, cursor: "pointer", border: "none",
+                            background: currency === opt.val ? sBtnSelBg : sBtnUnsBg,
+                            color: currency === opt.val ? sBtnSelFg : sBtnUnsFg,
+                            transition: "background 0.15s, color 0.15s",
+                          }}
+                          onMouseEnter={e => { if (currency !== opt.val) { (e.currentTarget as HTMLElement).style.background = sBtnHovBg; (e.currentTarget as HTMLElement).style.color = sBtnHovFg; }}}
+                          onMouseLeave={e => { if (currency !== opt.val) { (e.currentTarget as HTMLElement).style.background = sBtnUnsBg; (e.currentTarget as HTMLElement).style.color = sBtnUnsFg; }}}>
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              {/* Divider */}
+              <div style={{ width: 1, height: 24, background: navBorder_, flexShrink: 0 }} />
+
+              {/* Auth */}
+              {isAuthenticated ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <motion.button
+                      whileHover={{ scale: 1.03 }}
+                      whileTap={{ scale: 0.97 }}
+                      style={{
+                        display: "flex", alignItems: "center", gap: "0.5rem",
+                        height: 36, padding: "0 0.875rem 0 0.375rem",
+                        borderRadius: 9999,
+                        background: searchBg_,
+                        border: `1px solid ${navBorder_}`,
+                        cursor: "pointer",
+                      }}
+                      onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = searchBgHov_; (e.currentTarget as HTMLElement).style.borderColor = navBorderH_; }}
+                      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = searchBg_; (e.currentTarget as HTMLElement).style.borderColor = navBorder_; }}
+                    >
+                      <div style={{ width: 28, height: 28, borderRadius: "50%", background: BTN_GRADIENT, boxShadow: "0 2px 8px rgba(22,163,74,0.38)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        <span style={{ fontFamily: F_NASKH, fontSize: "11px", fontWeight: 900, color: WHITE }}>
+                          {user?.name?.charAt(0)?.toUpperCase() ?? "U"}
+                        </span>
+                      </div>
+                      <span style={{ fontFamily: F_SANS, fontSize: "0.8125rem", fontWeight: 600, color: navFg, maxWidth: 80, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {user?.name}
+                      </span>
+                      <ChevronDown style={{ height: 13, width: 13, color: navMutedFg }} />
+                    </motion.button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" sideOffset={8} className="w-52 p-0 overflow-hidden rounded-2xl shadow-2xl" style={settingsDropStyle}>
+                    <div style={{ padding: "0.75rem 0.875rem", borderBottom: `1px solid ${sPanelSep}` }}>
+                      <p style={{ fontFamily: F_SANS, fontSize: "0.8125rem", fontWeight: 700, color: aDropFg }}>{user?.name}</p>
+                      <p style={{ fontFamily: F_SANS, fontSize: "11px", color: aDropSub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} translate="no">{user?.email}</p>
+                    </div>
+                    <div style={{ padding: "0.25rem 0" }}>
+                      <DropdownMenuItem asChild>
+                        <Link href={isAdmin ? "/admin" : isSeller ? "/seller/dashboard" : isCourier ? "/courier" : "/customer/dashboard"}
+                          className="flex items-center gap-2 cursor-pointer" style={{ fontFamily: F_SANS, fontSize: "0.8125rem", color: aDropItem, padding: "0.5rem 0.875rem" }}>
+                          <LayoutDashboard style={{ height: 14, width: 14 }} /> {t("nav.dashboard")}
+                        </Link>
+                      </DropdownMenuItem>
+                      {isCustomer && (
+                        <DropdownMenuItem asChild>
+                          <Link href="/orders" className="flex items-center gap-2 cursor-pointer" style={{ fontFamily: F_SANS, fontSize: "0.8125rem", color: aDropItem, padding: "0.5rem 0.875rem" }}>
+                            <ClipboardList style={{ height: 14, width: 14 }} /> {t("nav.orders")}
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
+                      {isCustomer && (
+                        <DropdownMenuItem asChild>
+                          <Link href="/account" className="flex items-center gap-2 cursor-pointer" style={{ fontFamily: F_SANS, fontSize: "0.8125rem", color: aDropItem, padding: "0.5rem 0.875rem" }}>
+                            <User style={{ height: 14, width: 14 }} /> {t("account.title")}
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
+                      {isSeller && sellerLinks.map(l => (
+                        <DropdownMenuItem key={l.href} asChild>
+                          <Link href={l.href} className="flex items-center gap-2 cursor-pointer" style={{ fontFamily: F_SANS, fontSize: "0.8125rem", color: aDropItem, padding: "0.5rem 0.875rem" }}>
+                            <l.icon style={{ height: 14, width: 14 }} /> {l.label}
+                          </Link>
+                        </DropdownMenuItem>
+                      ))}
+                      {isAdmin && adminLinks.slice(1, 5).map(l => (
+                        <DropdownMenuItem key={l.href} asChild>
+                          <Link href={l.href} className="flex items-center gap-2 cursor-pointer" style={{ fontFamily: F_SANS, fontSize: "0.8125rem", color: aDropItem, padding: "0.5rem 0.875rem" }}>
+                            <l.icon style={{ height: 14, width: 14 }} /> {l.label}
+                          </Link>
+                        </DropdownMenuItem>
+                      ))}
+                      {isCourier && (
+                        <DropdownMenuItem asChild>
+                          <Link href="/courier" className="flex items-center gap-2 cursor-pointer" style={{ fontFamily: F_SANS, fontSize: "0.8125rem", color: aDropItem, padding: "0.5rem 0.875rem" }}>
+                            <Bike style={{ height: 14, width: 14 }} /> {isRtl ? "مساحة العمل" : "Workspace"}
+                          </Link>
+                        </DropdownMenuItem>
+                      )}
+                      <DropdownMenuSeparator style={{ background: sPanelSep, margin: "0.25rem 0.875rem" }} />
+                      <DropdownMenuItem onClick={logout} style={{ fontFamily: F_SANS, fontSize: "0.8125rem", color: aDropDang, padding: "0.5rem 0.875rem", cursor: "pointer" }}
+                        className="focus:bg-red-500/10">
+                        <LogOut style={{ height: 14, width: 14, marginInlineEnd: "0.5rem" }} /> {t("nav.logout")}
+                      </DropdownMenuItem>
+                    </div>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : (
+                <motion.button
+                  onClick={openLogin}
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  className="syano-login-btn"
+                  style={{
+                    fontFamily: F_SANS, fontSize: "0.8125rem", fontWeight: 700,
+                    padding: "0.5rem 1.375rem", borderRadius: 9999,
+                    background: BTN_GRADIENT, color: "#ffffff",
+                    cursor: "pointer", whiteSpace: "nowrap",
+                    border: "none", letterSpacing: "0.025em",
+                  }}
+                  onMouseEnter={e => { (e.currentTarget as HTMLElement).style.boxShadow = BTN_SHADOW_H; }}
+                  onMouseLeave={e => { (e.currentTarget as HTMLElement).style.boxShadow = ""; }}
+                >
+                  {t("nav.login")}
+                </motion.button>
+              )}
+            </div>
+          </div>
+
+          {/* ══ MOBILE DRAWER ════════════════════════════════════════════════ */}
+          <SheetContent
+            side={isRtl ? "right" : "left"}
+            className="w-[min(300px,78vw)] p-0 flex flex-col"
+            style={{ background: isDark ? "#0C0C0E" : "#FFFFFF", borderColor: sPanelSep }}
+            aria-describedby={undefined}
+          >
+            <SheetTitle className="sr-only">Menu</SheetTitle>
+
+            {/* Header */}
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", paddingTop: "2.5rem", paddingBottom: "1.75rem", borderBottom: `1px solid ${sPanelSep}`, position: "relative", overflow: "hidden" }}>
+              <div style={{ position: "absolute", top: "1.5rem", left: "50%", transform: "translateX(-50%)", height: 80, width: 80, borderRadius: "50%", background: isDark ? "rgba(255,255,255,0.04)" : "rgba(22,163,74,0.10)", filter: "blur(20px)", pointerEvents: "none" }} />
+              <img src="/syano-logo.png" alt="Syano" width={56} height={56}
+                style={{ position: "relative", height: 56, width: 56, objectFit: "contain", filter: isDark ? "drop-shadow(0 0 16px rgba(255,255,255,0.12))" : "none" }} loading="eager" />
+              <p style={{ fontFamily: F_NASKH, fontWeight: 900, letterSpacing: "0.28em", fontSize: "1.125rem", color: aDropFg, marginTop: "0.75rem" }}>SYANO</p>
+              <p style={{ fontFamily: F_SANS, fontSize: "0.6875rem", fontWeight: 600, letterSpacing: "0.12em", color: sPanelDim, textTransform: "uppercase", marginTop: "0.25rem" }}>سوق سوريا</p>
+            </div>
+
+            {/* Nav links */}
+            <div style={{ flex: 1, overflowY: "auto", padding: "0.75rem" }}>
+              <MobLink href="/"                      icon={Home}        label={isRtl ? "الرئيسية" : "Home"}       loc={location} onClose={closeMobile} />
+              {isAdmin      && adminLinks.map(l   => <MobLink key={l.href} {...l} loc={location} onClose={closeMobile} />)}
+              {isSeller     && sellerLinks.map(l  => <MobLink key={l.href} {...l} loc={location} onClose={closeMobile} />)}
+              {isCourier    && <MobLink href="/courier"           icon={Bike}        label={isRtl ? "مساحة العمل" : "Workspace"} loc={location} onClose={closeMobile} />}
+              {isCustomer   && customerLinks.map(l => <MobLink key={l.href} {...l} loc={location} onClose={closeMobile} />)}
+              {isCustomer   && <MobLink href="/account"          icon={User}        label={t("account.title")} loc={location} onClose={closeMobile} />}
+              {!isSeller && !isAdmin && !isCourier && <MobLink href="/cart"     icon={ShoppingCart} label={isRtl ? "السلة" : "Cart"}     loc={location} onClose={closeMobile} />}
+              {!isSeller && !isAdmin && !isCourier && <MobLink href="/wishlist" icon={Heart}        label={isRtl ? "المفضلة" : "Wishlist"} loc={location} onClose={closeMobile} />}
+              {isAuthenticated && !isCourier && (
+                <MobLink
+                  href={isAdmin ? "/admin/messages" : isSeller ? "/seller/messages" : "/messages"}
+                  icon={MessageCircle}
+                  label={isRtl ? "الرسائل" : "Messages"}
+                  loc={location}
+                  onClose={closeMobile}
+                />
+              )}
+            </div>
+
+            {/* Preferences */}
+            <div style={{ padding: "0.75rem", borderTop: `1px solid ${sPanelSep}` }}>
+              <p style={{ fontFamily: F_SANS, fontSize: "9px", fontWeight: 700, letterSpacing: "0.1em", color: sPanelDim, textTransform: "uppercase", padding: "0.25rem 0.75rem 0.5rem" }}>
+                {isRtl ? "التفضيلات" : "Preferences"}
+              </p>
+              {/* Language */}
+              <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", alignItems: "center", gap: "0.75rem", padding: "0.375rem 0.75rem", minHeight: 44 }}>
+                <Globe style={{ height: 16, width: 16, color: sPanelDim }} />
+                <span style={{ fontFamily: F_SANS, fontSize: "0.875rem", fontWeight: 500, color: aDropSub }}>{isRtl ? "اللغة" : "Language"}</span>
+                <div style={{ display: "flex", gap: "0.25rem" }}>
+                  {["en", "ar"].map(l => (
+                    <button key={l} onClick={() => switchLang(l)}
+                      style={{ fontFamily: F_SANS, fontSize: "11px", fontWeight: 700, padding: "0.2rem 0.5rem", borderRadius: 6, border: "none", cursor: "pointer", background: lang === l ? sBtnSelBg : sBtnUnsBg, color: lang === l ? sBtnSelFg : sBtnUnsFg, transition: "background 0.15s" }}>
+                      {l.toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Currency */}
+              <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", alignItems: "center", gap: "0.75rem", padding: "0.375rem 0.75rem", minHeight: 44 }}>
+                <DollarSign style={{ height: 16, width: 16, color: sPanelDim }} />
+                <span style={{ fontFamily: F_SANS, fontSize: "0.875rem", fontWeight: 500, color: aDropSub }}>{isRtl ? "العملة" : "Currency"}</span>
+                <div style={{ display: "flex", gap: "0.25rem" }}>
+                  {(["USD", "SYP"] as const).map(c => (
+                    <button key={c} onClick={() => setCurrency(c)}
+                      style={{ fontFamily: F_SANS, fontSize: "11px", fontWeight: 700, padding: "0.2rem 0.5rem", borderRadius: 6, border: "none", cursor: "pointer", background: currency === c ? sBtnSelBg : sBtnUnsBg, color: currency === c ? sBtnSelFg : sBtnUnsFg, transition: "background 0.15s" }}>
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Theme */}
+              <div style={{ display: "grid", gridTemplateColumns: "auto 1fr auto", alignItems: "center", gap: "0.75rem", padding: "0.375rem 0.75rem", minHeight: 44 }}>
+                {theme === "dark" ? <Moon style={{ height: 16, width: 16, color: sPanelDim }} /> : <Sun style={{ height: 16, width: 16, color: sPanelDim }} />}
+                <span style={{ fontFamily: F_SANS, fontSize: "0.875rem", fontWeight: 500, color: aDropSub }}>{isRtl ? "المظهر" : "Theme"}</span>
+                <div style={{ display: "flex", gap: "0.25rem" }}>
+                  {(["light", "dark", "system"] as const).map(tm => (
+                    <button key={tm} onClick={() => setTheme(tm)}
+                      style={{ fontFamily: F_SANS, fontSize: "10px", fontWeight: 700, padding: "0.2rem 0.4rem", borderRadius: 6, border: "none", cursor: "pointer", background: theme === tm ? sBtnSelBg : sBtnUnsBg, color: theme === tm ? sBtnSelFg : sBtnUnsFg, transition: "background 0.15s" }}>
+                      {tm[0].toUpperCase()}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Auth footer */}
+            <div style={{ padding: "0.75rem", borderTop: `1px solid ${sPanelSep}` }}>
+              {isAuthenticated ? (
+                <>
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.5rem 0.75rem 0.75rem" }}>
+                    <div style={{ width: 36, height: 36, borderRadius: "50%", background: BTN_GRADIENT, boxShadow: "0 2px 10px rgba(22,163,74,0.38)", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                      <span style={{ fontFamily: F_NASKH, fontSize: "14px", fontWeight: 900, color: WHITE }}>
+                        {user?.name?.charAt(0)?.toUpperCase() ?? "U"}
+                      </span>
+                    </div>
+                    <div style={{ minWidth: 0 }}>
+                      <p style={{ fontFamily: F_SANS, fontSize: "0.875rem", fontWeight: 600, color: aDropFg, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user?.name}</p>
+                      <p style={{ fontFamily: F_SANS, fontSize: "11px", color: aDropSub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} translate="no">{user?.email}</p>
+                    </div>
+                  </div>
+                  <button onClick={() => { logout(); closeMobile(); }}
+                    style={{ fontFamily: F_SANS, display: "flex", alignItems: "center", gap: "0.75rem", width: "100%", padding: "0.625rem 0.75rem", borderRadius: 12, background: "none", border: "none", fontSize: "0.875rem", fontWeight: 600, color: aDropDang, cursor: "pointer", minHeight: 44, transition: "background 0.15s" }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = "rgba(220,38,38,0.08)"; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "none"; }}>
+                    <LogOut style={{ height: 17, width: 17 }} />
+                    {t("nav.logout")}
+                  </button>
+                </>
+              ) : (
+                <button onClick={() => { closeMobile(); openLogin(); }}
+                  style={{ fontFamily: F_SANS, fontWeight: 700, fontSize: "0.875rem", letterSpacing: "0.025em", display: "flex", alignItems: "center", justifyContent: "center", width: "100%", height: 44, borderRadius: 12, background: BTN_GRADIENT, color: "#ffffff", border: "none", cursor: "pointer", boxShadow: BTN_SHADOW }}>
+                  {t("nav.login")}
+                </button>
+              )}
+            </div>
+          </SheetContent>
+        </Sheet>
+
+        {/* ══ MOBILE SEARCH OVERLAY (portal) ══════════════════════════════════ */}
+        {searchOpen && createPortal(
+          <>
+            <style>{`
+              @keyframes lnav-backdrop { from { opacity:0 } to { opacity:1 } }
+              @keyframes lnav-panel    { from { opacity:0; transform:translateY(-8px) } to { opacity:1; transform:translateY(0) } }
+              .lnav-backdrop { animation: lnav-backdrop 180ms ease forwards; }
+              .lnav-panel    { animation: lnav-panel 180ms ease forwards; }
+            `}</style>
+            <div
+              className="lnav-backdrop md:hidden fixed inset-0 z-[9999]"
+              role="dialog" aria-modal="true" aria-label={isRtl ? "البحث" : "Search"}
+              dir={isRtl ? "rtl" : "ltr"}
+            >
+              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+                onClick={() => { setSearchOpen(false); setSearchQuery(""); }} aria-hidden="true" />
+              <div className="lnav-panel relative" style={{ background: isDark ? "#0C0C0E" : "#FFFFFF", boxShadow: "0 8px 40px rgba(0,0,0,0.8)" }}>
+                <div aria-hidden="true" style={{ height: "env(safe-area-inset-top, 0px)" }} />
+                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", padding: "0 0.75rem", height: "3.75rem" }}>
+                  <form onSubmit={handleSearchSubmit} style={{ flex: 1, display: "flex", alignItems: "center", gap: "0.5rem", background: isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)", border: `1px solid ${sPanelSep}`, borderRadius: 12, padding: "0 0.75rem", height: 40 }}>
+                    <Search style={{ height: 15, width: 15, color: aDropSub, flexShrink: 0 }} />
+                    <input
+                      value={searchQuery}
+                      onChange={e => setSearchQuery(e.target.value)}
+                      onKeyDown={handleSearchKD}
+                      placeholder={isRtl ? "ابحث عن منتجات، متاجر..." : "Search products, stores..."}
+                      style={{ fontFamily: F_SANS, fontSize: "0.875rem", flex: 1, minWidth: 0, background: "transparent", border: "none", outline: "none", color: aDropFg }}
+                      autoFocus autoComplete="off" spellCheck={false}
+                    />
+                    {searchQuery && (
+                      <button type="button" aria-label={t("a11y.close")} onClick={() => setSearchQuery("")}
+                        style={{ color: aDropSub, background: "none", border: "none", cursor: "pointer", display: "flex" }}>
+                        <X style={{ height: 14, width: 14 }} />
+                      </button>
+                    )}
+                  </form>
+                  <button onClick={() => { setSearchOpen(false); setSearchQuery(""); }}
+                    style={{ fontFamily: F_SANS, fontSize: "0.875rem", fontWeight: 600, color: aDropSub, background: "none", border: "none", cursor: "pointer", minHeight: 44, padding: "0 0.25rem", display: "flex", alignItems: "center" }}>
+                    {isRtl ? "إلغاء" : "Cancel"}
+                  </button>
+                </div>
+                <div style={{ overflowY: "auto", maxHeight: "calc(85vh - 3.75rem)" }}>
+                  {debouncedQ.length >= 2 ? (
+                    searchLoading ? (
+                      <div style={{ padding: "0.5rem 0" }}>
+                        {[0, 1, 2, 3].map(i => (
+                          <div key={i} style={{ display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.75rem 1rem" }}>
+                            <div style={{ height: 13, width: 13, borderRadius: "50%", background: sPanelSep }} />
+                            <div style={{ height: 10, borderRadius: 6, background: sPanelSep, width: `${45 + i * 15}%` }} />
+                          </div>
+                        ))}
+                      </div>
+                    ) : (suggestions.suggestions?.length ?? 0) === 0 && (suggestions.stores?.length ?? 0) === 0 ? (
+                      <div style={{ padding: "1.5rem", textAlign: "center", fontFamily: F_SANS, fontSize: "0.875rem", color: sPanelDim }}>
+                        {isRtl ? "لا توجد نتائج" : "No results found"}
+                      </div>
+                    ) : (
+                      <>
+                        {(suggestions.suggestions ?? []).slice(0, 6).map((s, i) => {
+                          const text = isRtl && s.textAr ? s.textAr : s.text;
+                          return (
+                            <button key={i} onClick={() => handleSuggClick(text)}
+                              style={{ width: "100%", display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.75rem 1rem", background: "none", border: "none", cursor: "pointer", textAlign: isRtl ? "right" : "left", transition: "background 0.12s" }}
+                              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.04)"; }}
+                              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "none"; }}>
+                              <Search style={{ height: 14, width: 14, color: sPanelDim, flexShrink: 0 }} />
+                              <span style={{ fontFamily: F_SANS, fontSize: "0.875rem", color: aDropItem, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{text}</span>
+                            </button>
+                          );
+                        })}
+                        <button onClick={handleSearchSubmit as React.MouseEventHandler}
+                          style={{ width: "100%", display: "flex", alignItems: "center", gap: "0.5rem", padding: "0.875rem 1rem", borderTop: `1px solid ${BORDER}`, background: "none", border: "none", borderTopColor: BORDER, borderTopWidth: 1, borderTopStyle: "solid", color: GREEN, fontFamily: F_SANS, fontSize: "0.875rem", fontWeight: 600, cursor: "pointer" }}>
+                          <Search style={{ height: 14, width: 14 }} />
+                          {isRtl ? `عرض النتائج لـ "${debouncedQ}"` : `See results for "${debouncedQ}"`}
+                        </button>
+                      </>
+                    )
+                  ) : (
+                    <>
+                      {recentSearches.length > 0 && (
+                        <>
+                          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "1rem 1rem 0.375rem" }}>
+                            <span style={{ fontFamily: F_SANS, fontSize: "10px", fontWeight: 700, letterSpacing: "0.08em", color: sPanelDim, textTransform: "uppercase", display: "flex", alignItems: "center", gap: "0.3rem" }}>
+                              <Clock style={{ height: 12, width: 12 }} /> {isRtl ? "البحث السابق" : "Recent searches"}
+                            </span>
+                            <button onClick={clearRecent} style={{ fontFamily: F_SANS, fontSize: "12px", color: aDropSub, background: "none", border: "none", cursor: "pointer" }}>
+                              {isRtl ? "مسح الكل" : "Clear all"}
+                            </button>
+                          </div>
+                          {recentSearches.map(s => (
+                            <div key={s} style={{ display: "flex", alignItems: "center" }}>
+                              <button onClick={() => setSearchQuery(s)}
+                                style={{ flex: 1, display: "flex", alignItems: "center", gap: "0.75rem", padding: "0.625rem 1rem", background: "none", border: "none", cursor: "pointer", textAlign: isRtl ? "right" : "left" }}>
+                                <Clock style={{ height: 14, width: 14, color: sPanelDim, flexShrink: 0 }} />
+                                <span style={{ fontFamily: F_SANS, fontSize: "0.875rem", color: aDropSub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s}</span>
+                              </button>
+                              <button onClick={() => removeRecent(s)} style={{ padding: "0.625rem 1rem", color: sPanelDim, background: "none", border: "none", cursor: "pointer" }}>
+                                <X style={{ height: 13, width: 13 }} />
+                              </button>
+                            </div>
+                          ))}
+                        </>
+                      )}
+                      {trending.length > 0 && (
+                        <>
+                          <div style={{ padding: "0.75rem 1rem 0.375rem", borderTop: recentSearches.length > 0 ? `1px solid ${sPanelSep}` : "none", display: "flex", alignItems: "center", gap: "0.375rem" }}>
+                            <TrendingUp style={{ height: 12, width: 12, color: sPanelDim }} />
+                            <span style={{ fontFamily: F_SANS, fontSize: "10px", fontWeight: 700, letterSpacing: "0.08em", color: sPanelDim, textTransform: "uppercase" }}>
+                              {isRtl ? "الأكثر بحثاً" : "Popular searches"}
+                            </span>
+                          </div>
+                          <div style={{ padding: "0 1rem 1rem", display: "flex", flexWrap: "wrap", gap: "0.375rem" }}>
+                            {trending.slice(0, 10).map(tr => (
+                              <button key={tr.query}
+                                onClick={() => { navigate(`/shop?q=${encodeURIComponent(tr.query)}`); setSearchOpen(false); setSearchQuery(""); }}
+                                style={{ fontFamily: F_SANS, fontSize: "0.8125rem", fontWeight: 500, padding: "0.3rem 0.875rem", borderRadius: 9999, background: sBtnUnsBg, border: `1px solid ${sPanelSep}`, color: aDropItem, cursor: "pointer" }}>
+                                {tr.query}
+                              </button>
+                            ))}
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </>,
+          document.body,
+        )}
+      </header>
+
+      {/* ══ MOBILE BOTTOM TAB BAR ═════════════════════════════════════════════
+           Fixed at the bottom of the screen on mobile (< md). Provides
+           thumb-friendly one-tap navigation to the five most-used sections.
+           Hidden on desktop (md:hidden).                                       */}
+      <nav
+        className="md:hidden fixed bottom-0 inset-x-0 z-40"
+        aria-label={isRtl ? "التنقل الرئيسي" : "Main navigation"}
+        style={{
+          background: isDark ? "rgba(12,12,14,0.97)" : "rgba(255,255,255,0.97)",
+          backdropFilter: "blur(16px)",
+          WebkitBackdropFilter: "blur(16px)",
+          borderTop: `1px solid ${navBorder_}`,
+          paddingBottom: "env(safe-area-inset-bottom, 0px)",
+        }}
+        dir={isRtl ? "rtl" : "ltr"}
+      >
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", height: "3.25rem" }}>
+
+          {/* Home */}
+          <Link
+            href="/"
+            style={{
+              display: "flex", flexDirection: "column", alignItems: "center",
+              justifyContent: "center", gap: "3px",
+              fontSize: "9px", fontFamily: F_SANS, fontWeight: 600,
+              color: location === "/" ? GREEN : navMutedFg,
+              textDecoration: "none", transition: "color 0.15s",
+            }}
+          >
+            <Home style={{ height: 20, width: 20 }} />
+            <span>{isRtl ? "الرئيسية" : "Home"}</span>
+          </Link>
+
+          {/* Browse */}
+          <Link
+            href="/shop"
+            style={{
+              display: "flex", flexDirection: "column", alignItems: "center",
+              justifyContent: "center", gap: "3px",
+              fontSize: "9px", fontFamily: F_SANS, fontWeight: 600,
+              color: location.startsWith("/shop") ? GREEN : navMutedFg,
+              textDecoration: "none", transition: "color 0.15s",
+            }}
+          >
+            <Layers style={{ height: 20, width: 20 }} />
+            <span>{isRtl ? "تصفح" : "Browse"}</span>
+          </Link>
+
+          {/* Search — opens full-screen overlay */}
+          <button
+            type="button"
+            onClick={() => setSearchOpen(true)}
+            aria-label={t("a11y.search")}
+            style={{
+              display: "flex", flexDirection: "column", alignItems: "center",
+              justifyContent: "center", gap: "3px",
+              fontSize: "9px", fontFamily: F_SANS, fontWeight: 600,
+              color: navMutedFg, background: "none", border: "none",
+              cursor: "pointer", padding: 0,
+            }}
+          >
+            <Search style={{ height: 20, width: 20 }} />
+            <span>{isRtl ? "بحث" : "Search"}</span>
+          </button>
+
+          {/* Cart (customers + guests only) */}
+          {!isSeller && !isAdmin && !isCourier ? (
+            <Link
+              href="/cart"
+              style={{
+                display: "flex", flexDirection: "column", alignItems: "center",
+                justifyContent: "center", gap: "3px",
+                fontSize: "9px", fontFamily: F_SANS, fontWeight: 600,
+                color: location === "/cart" ? GREEN : navMutedFg,
+                textDecoration: "none", transition: "color 0.15s", position: "relative",
+              }}
+            >
+              <span style={{ position: "relative" }}>
+                <ShoppingCart style={{ height: 20, width: 20 }} />
+                {visibleCart > 0 && (
+                  <span style={{
+                    position: "absolute", top: -4, insetInlineEnd: -5,
+                    minWidth: "1rem", height: "1rem", borderRadius: 9999,
+                    background: GREEN, color: WHITE, fontSize: "7px",
+                    fontWeight: 800, display: "flex", alignItems: "center",
+                    justifyContent: "center", padding: "0 2px",
+                  }}>
+                    {visibleCart > 9 ? "9+" : visibleCart}
+                  </span>
+                )}
+              </span>
+              <span>{isRtl ? "السلة" : "Cart"}</span>
+            </Link>
+          ) : (
+            <Link
+              href={isAdmin ? "/admin" : isSeller ? "/seller" : "/courier"}
+              style={{
+                display: "flex", flexDirection: "column", alignItems: "center",
+                justifyContent: "center", gap: "3px",
+                fontSize: "9px", fontFamily: F_SANS, fontWeight: 600,
+                color: navMutedFg, textDecoration: "none",
+              }}
+            >
+              <LayoutDashboard style={{ height: 20, width: 20 }} />
+              <span>{isRtl ? "لوحتي" : "Dashboard"}</span>
+            </Link>
+          )}
+
+          {/* Account / Sign in */}
+          <button
+            type="button"
+            onClick={() => {
+              if (isAuthenticated) {
+                navigate(isAdmin ? "/admin" : isSeller ? "/seller" : isCourier ? "/courier" : "/profile");
+              } else {
+                openLogin();
+              }
+            }}
+            style={{
+              display: "flex", flexDirection: "column", alignItems: "center",
+              justifyContent: "center", gap: "3px",
+              fontSize: "9px", fontFamily: F_SANS, fontWeight: 600,
+              color: (location.startsWith("/profile") || location.startsWith("/admin") || location.startsWith("/seller") || location.startsWith("/courier"))
+                ? GREEN : navMutedFg,
+              background: "none", border: "none", cursor: "pointer", padding: 0,
+            }}
+          >
+            <User style={{ height: 20, width: 20 }} />
+            <span>{isAuthenticated ? (isRtl ? "حسابي" : "Account") : (isRtl ? "تسجيل" : "Sign in")}</span>
+          </button>
+
+        </div>
+      </nav>
+
+      {/* Location modal */}
+      <LocationMapModal open={locationModalOpen} onClose={() => setLocationModalOpen(false)} />
+    </>
+  );
+}

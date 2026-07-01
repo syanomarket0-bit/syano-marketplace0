@@ -1,0 +1,52 @@
+Fix the following issues in the main desktop navbar:
+
+1. LOGO SIZE:
+The "SYANO" text next to the logo icon is too small. 
+Make both the logo icon and the "SYANO" text taller so 
+they fill the full height of the navbar naturally, while 
+keeping proper vertical padding. Do not overflow outside 
+the navbar bounds.
+
+2. NAVBAR BACKGROUND COLOR:
+The navbar background must match the page background 
+exactly, adapting automatically to the current theme:
+- In light mode: same background color as the page content area
+- In dark mode: same background color as the page content area
+- Use the same CSS variable used for the page/body background 
+  (likely var(--background)) so it always stays in sync with 
+  the theme automatically
+- Also apply this same background color to any dropdown menus 
+  or popover menus that open from the navbar (location picker, 
+  settings dropdown, etc.)
+
+3. HOVER COLOR ON NAVBAR BUTTONS/ICONS:
+Currently when hovering over navbar buttons (wishlist, 
+cart, settings, etc.), the hover highlight color appears 
+blue. Change ALL hover states on navbar interactive 
+elements to use the site's primary green color (same green 
+used in the "Log in" button — check --primary CSS variable 
+or the green value defined in the theme).
+
+This includes:
+- Icon buttons (wishlist heart, cart, settings gear)
+- Any text links in the navbar
+- The hover ring or background highlight on mouse over
+- Dropdown menu items hover state
+
+4. SEARCH BAR & SITE BUTTON TEXT COLOR:
+Make the text and icon colors inside the search bar and 
+the site/location button white (or light colored) so they 
+are clearly visible and readable against the navbar 
+background in both light and dark mode.
+
+Rules:
+- Do NOT change the "Log in" button style
+- Do NOT change the logo itself
+- All fixes must work correctly in both light mode and 
+  dark mode
+- Use existing CSS variables wherever possible to stay 
+  consistent with the design system
+
+After the fix, take a screenshot in both light and dark 
+mode showing the navbar with a dropdown open to confirm 
+all colors match correctly.

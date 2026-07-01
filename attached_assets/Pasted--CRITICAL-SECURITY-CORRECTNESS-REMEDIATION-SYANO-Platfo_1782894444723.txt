@@ -1,0 +1,200 @@
+# 🚨 CRITICAL SECURITY & CORRECTNESS REMEDIATION — SYANO Platform
+
+You are a senior application security engineer AND a senior Node.js/TypeScript backend engineer. Your job is to fix EVERY issue listed below in the SYANO marketplace codebase. Do not refactor unrelated code. Do not change business logic. Make the **minimal, surgical, correct fix** for each item, preserving the existing code style and architecture (Express + Drizzle ORM + PostgreSQL + React/TypeScript frontend).
+
+**Read each item fully.** Every item includes: (a) the exact file path + line number, (b) the root cause, (c) the required fix with a code skeleton. Do not "fix" an issue differently than specified unless the specified fix is technically impossible — in that case, explain why and propose the closest equivalent.
+
+When done, run `pnpm run typecheck` and fix any type errors you introduced. Report a summary table of every change.
+
+---
+
+## PART A — CRITICAL (fix these FIRST, in order)
+
+### A1. Hardcoded default admin password boots the platform as root owner
+- **File:** `artifacts/api-server/src/lib/bootstrap-admin.ts` — line 18
+- **Root cause:** `return process.env.ROOT_ADMIN_PASSWORD ?? "00Amer00";` — if the env var is missing, the server silently boots a root admin (`delewatiamer7@gmail.com`, line 11) with the public, guessable password `00Amer00`, then *re-resets it to that value on every restart* (line 96), defeating any password change by the owner.
+- **Fix:**
+  1. Remove the `?? "00Amer00"` fallback entirely.
+  2. If `process.env.ROOT_ADMIN_PASSWORD` is missing **OR** weaker than 12 characters, `throw new Error("ROOT_ADMIN_PASSWORD must be set and at least 12 characters")` at startup. The server MUST refuse to boot.
+  3. Do NOT reset the password on every restart. Only set the hash when creating the account for the first time. On subsequent boots, only repair `role`, `accountStatus`, `isVerified` — never overwrite `passwordHash` unless the env var explicitly changes (compare against a stored env-value hash if you want auto-sync, but never default it).
+  4. Add a startup log line when the account already exists: `"Root Owner healthy — password untouched"`.
+
+### A2. Double-spend race condition in courier wallet (no row locking)
+- **File:** `artifacts/api-server/src/services/courierWalletService.ts`
+- **Affected functions:** `requestPayout` (line ~142), `addEarning` (line ~90), `approvePayout` (line ~214), `rejectPayout` (line ~266)
+- **Root cause:** Every function reads the balance with a plain `SELECT ... FROM courier_wallets` **inside a transaction but without `FOR UPDATE`**. Two concurrent requests both read the same balance, both pass the `if (amount > available)` check, and both decrement → negative balance / money created from nothing.
+- **Fix:** For each function, change the wallet read inside the transaction to lock the row:
+  ```sql
+  SELECT available_balance, pending_balance
+    FROM courier_wallets
+   WHERE courier_id = $1
+   FOR UPDATE
+  ```
+  Verify the lock is applied for the column being mutated in each function:
+  - `requestPayout`: lock + check `available_balance >= amount` (reject if not).
+  - `approvePayout`: lock + check `pending_balance >= amount`.
+  - `rejectPayout`: lock (refunding pending → available).
+  - `addEarning`: lock the row before incrementing.
+  Also: add a DB-level CHECK constraint note — propose adding `CHECK (available_balance >= 0)` and `CHECK (pending_balance >= 0)` on `courier_wallets` (do this via a comment pointing the migration maintainer, OR add a drizzle migration if that's the repo convention).
+
+### A3. JWT stored in localStorage — full session theft on any XSS
+- **File:** `artifacts/marketplace/src/contexts/AuthContext.tsx` — lines 25, 33, 61
+- **Root cause:** The access token is persisted in `localStorage`/`sessionStorage` and sent as a `Bearer` header. Any XSS reads it permanently.
+- **Fix:** Switch to an **httpOnly, Secure, SameSite=Lax** cookie set by the server.
+  1. In `routes/auth.ts` `signToken` usage points (login, register, verify-otp, google, facebook, reissue), after computing `token`, also:
+     ```ts
+     res.cookie("token", token, {
+       httpOnly: true,
+       secure: process.env.NODE_ENV === "production",
+       sameSite: "lax",
+       maxAge: 7 * 24 * 60 * 60 * 1000,
+       path: "/",
+     });
+     ```
+  2. In `middlewares/auth.ts` `requireAuth`/`optionalAuth`: read the token from `req.cookies?.token ?? bearerHeader` (support both during transition, then remove Bearer support once frontend is migrated).
+  3. In `app.ts`: add `app.use(cookieParser())` (install `cookie-parser` if missing).
+  4. In `AuthContext.tsx`: stop storing/reading `token` from storage. Auth state derives from `GET /auth/me`. On logout, call a logout endpoint that clears the cookie.
+  5. Add a `POST /auth/logout` that does `res.clearCookie("token")`.
+  - If the team cannot do the cookie migration right now, as a **mandatory interim** hardening: keep it in `sessionStorage` ONLY (never localStorage), AND audit all `dangerouslySetInnerHTML` usages (see D1). But the cookie path is the correct fix — prefer it.
+
+---
+
+## PART B — HIGH (fix after A)
+
+### B1. Account enumeration via differentiated login errors
+- **File:** `artifacts/api-server/src/routes/auth.ts` — lines 364, 367
+- **Root cause:** Returns `USER_NOT_FOUND` vs `INVALID_PASSWORD`, letting an attacker enumerate registered emails/phones.
+- **Fix:** Both branches must return the identical response: `res.status(401).json({ error: "INVALID_CREDENTIALS" })`. Keep rate limiting intact. Do not change the suspended-account branch (that is intentional).
+
+### B2. Race condition in per-user OTP rate limiter (non-atomic read-check-write)
+- **File:** `artifacts/api-server/src/routes/auth.ts` — `checkUserRateLimit` lines 155–183
+- **Root cause:** `SELECT count` → `if (count >= MAX)` → `UPDATE count = count+1` is not atomic; two concurrent sends both pass.
+- **Fix:** Replace with a single atomic conditional update:
+  ```ts
+  const result = await db.update(usersTable)
+    .set({ otpRequestCount: sql`${usersTable.otpRequestCount} + 1` })
+    .where(and(
+      eq(usersTable.id, userId),
+      // window reset OR under cap
+      or(
+        sql`${usersTable.otpRequestWindowStart} IS NULL OR ${usersTable.otpRequestWindowStart} < NOW() - INTERVAL '1 hour'`,
+        sql`${usersTable.otpRequestCount} < 5`
+      )
+    ))
+    .returning({ count: usersTable.otpRequestCount, windowStart: usersTable.otpRequestWindowStart });
+  // if no row returned → rate limited. Handle window reset by setting count=1 when window expired.
+  ```
+  Decide allowed/denied solely on whether a row was returned. Apply the same atomic pattern to `resetOtpAttempts` logic in `forgot-password`.
+
+### B3. Password reset does not invalidate existing sessions
+- **File:** `artifacts/api-server/src/routes/auth.ts` — `reset-password` handler, lines 755–775
+- **Root cause:** After the password is changed, old JWTs stay valid for 7 days.
+- **Fix:** Add a `passwordChangedAt: timestamp` column to `users` (or reuse an existing `updatedAt`). Include `iat` comparison in `requireAuth`: after verifying the JWT, fetch the user's `passwordChangedAt`; if the token's `iat` (in seconds) is older than `passwordChangedAt`, reject with 401 `SESSION_EXPIRED`. This also fixes the Google/Facebook link-takeover-of-stale-sessions concern.
+
+### B4. CSV export formula injection
+- **File:** `artifacts/api-server/src/routes/admin.ts` — `escape` helper, line 1349
+- **Root cause:** Only escapes `"`. A cell value like `=cmd|'/c calc'!A1` runs as a formula in Excel/Sheets on the admin's machine.
+- **Fix:**
+  ```ts
+  const escape = (v: unknown) => {
+    let s = String(v ?? "");
+    if (/^[=+\-@]/.test(s)) s = "'" + s;       // neutralize formula prefix
+    return `"${s.replace(/"/g, '""')}"`;
+  };
+  ```
+  Apply to every CSV export (orders, sellers, products, revenue — lines ~1358, 1370, 1382, 1394).
+
+### B5. Permissive CORS when CORS_ORIGIN unset + missing Origin allowed
+- **File:** `artifacts/api-server/src/app.ts` — CORS origin callback, lines 85–91
+- **Root cause:** When `configuredOrigins` is null, `callback(null, true)` allows ANY origin with `credentials: true`. Also `if (!origin) return callback(null, true)` allows credentialed requests with no Origin.
+- **Fix:**
+  1. In production (`NODE_ENV === "production"`): if `configuredOrigins` is empty, **refuse all credentialed cross-origin requests** (callback with an error / `callback(null, false)`).
+  2. Keep the permissive behavior only for `NODE_ENV !== "production"`.
+  3. For `!origin` (same-origin / curl): allow only for non-credentiaented/simple requests; with `credentials: true` it's safer to deny when origin is absent in production. Document the chosen behavior.
+
+### B6. In-memory rate limiter doesn't work behind a load balancer + spoofable client IP
+- **File:** `artifacts/api-server/src/lib/rateLimiter.ts` and `artifacts/api-server/src/routes/auth.ts` — `getIp` line 107
+- **Root cause:** (a) `Map`-based limits are per-process; N replicas = N× the limit. (b) `getIp` manually parses `X-Forwarded-For[0]`, which the client controls if the proxy isn't trusted/forcing it.
+- **Fix:**
+  1. Replace `getIp(req)` with Express's trusted `req.ip` (the app already sets `trust proxy 1` at `app.ts:13`). Document that the reverse proxy must overwrite (not append) `X-Forwarded-For`.
+  2. Move the limiter to a shared store. Add a thin Redis-backed limiter keyed by IP+endpoint. If Redis is not available in this environment, at minimum make the store pluggable and keep in-memory for single-instance dev. **Do not silently keep in-memory in production.**
+
+---
+
+## PART C — MEDIUM
+
+### C1. Swallowed audit-log errors hide tampering
+- **Files:** `auth.ts:151` (`auditLog`), `admin.ts:80` (`logAudit`)
+- **Fix:** Replace empty `catch {}` with `catch (e) { logger.error({ err: e }, "[audit] failed to write"); }`. Audit writes stay best-effort (don't fail the request) but failures become visible.
+
+### C2. `rememberMe` parsed but never used (OAuth)
+- **File:** `auth.ts` — Google handler line 847, Facebook handler line 987
+- **Fix:** Either wire `rememberMe` into token TTL (e.g., `expiresIn: rememberMe ? "30d" : "1d"`) or delete the field from the request parsing and the frontend. Do not leave dead security-adjacent flags.
+
+### C3. Weak bcrypt cost factor for users & OTP
+- **Files:** `auth.ts:249` (`bcrypt.hash(password, 10)`), `verification.ts:12` (`hashOTP`, cost 10)
+- **Fix:** Raise to `12` everywhere (the bootstrap admin already uses 12). Keep OTP at 10 only if you also shorten its validity — otherwise raise it too.
+
+### C4. No password strength policy
+- **File:** `auth.ts` — `RegisterBody`/`ResetPasswordBody`
+- **Fix:** In the Zod schema, require `.min(8)` AND `.regex(/[A-Za-z]/).regex(/[0-9]/)` at minimum (recommend adding a symbol too). Apply the same schema to reset-password.
+
+### C5. Non-atomic stock restoration on cancellation
+- **Files:** `orders.ts:706–749` (customer/seller cancel), `admin.ts:808–819` (admin cancel)
+- **Root cause:** Restore-stock loop runs OUTSIDE any transaction and the status update is separate. Partial failure corrupts inventory. The admin branch also ignores `variantId` → variant stock never restored.
+- **Fix:** Wrap the read-restore-update in a single `db.transaction(async (tx) => { ... SELECT FOR UPDATE on products/variants ... })`. Make the admin branch variant-aware (mirror the logic from `orders.ts`).
+
+### C6. `console.log` leaks recipient address + bypasses log level
+- **File:** `verification.ts:69`
+- **Fix:** Replace `console.log(...)` with `logger.info({ id: data.id }, "[OTP] Resend email sent")` — drop the recipient address (`to`) from prod logs, or keep only its domain.
+
+---
+
+## PART D — LOW / HARDENING
+
+### D1. Audit all `dangerouslySetInnerHTML` in the frontend
+- **Search:** `grep -rn "dangerouslySetInnerHTML" artifacts/marketplace/src artifacts/mobile`
+- **Action:** For each hit, verify the injected HTML is either static, server-sanitized, or passes through DOMPurify. If any reflects user input (product description, seller name, review comment, chat message), sanitize with `DOMPurify.sanitize(...)` before rendering. This is critical once A3 lands (cookies), but XSS is still bad with localStorage.
+
+### D2. Enable `noUnusedLocals` to catch dead security flags
+- **File:** `tsconfig.base.json:20`
+- **Fix:** Set `"noUnusedLocals": true` and `"noUnusedParameters": true`. Fix the resulting errors (this will also catch more bugs like the `rememberMe` issue). If too noisy in generated code, scope it per-package.
+
+### D3. Validate email/phone uniqueness race in register
+- **File:** `auth.ts:241–247`
+- **Root cause:** `SELECT` existence check then `INSERT` is not atomic; two concurrent registrations with the same email can both pass the check. The DB `UNIQUE` constraint is the real guard.
+- **Fix:** Keep the friendly check, but wrap the insert in a try/catch that maps a unique-violation (`23505`) to a 409 `"Email already registered"`. Confirm the `users.email` and `users.phone` columns actually have `UNIQUE` constraints in `lib/db/src/schema/users.ts` — if not, add them.
+
+### D4. Notification/activity pagination gaps
+- **File:** `admin.ts` activity feed (line 345) is hardcoded `limit(10)` with no pagination.
+- **Fix:** Apply `parsePagination` consistently. Low priority.
+
+### D5. Dev OTP logging
+- **File:** `verification.ts:25–27`
+- **Fix:** Gate strictly behind `process.env.NODE_ENV !== "production"` and add a `logger.warn` if it ever fires in production.
+
+---
+
+## PART E — VERIFICATION & CONSTRAINTS
+
+**Do NOT:**
+- Change the order-status state machine.
+- Change pricing logic (prices are correctly computed server-side from DB rows — leave it).
+- Add new dependencies without checking `pnpm-workspace.yaml` (it enforces a 1-day minimum release age; use `minimumReleaseAgeExclude` only if absolutely needed and explain why).
+- Disable the `preinstall` pnpm-only guard in `package.json`.
+- Commit secrets. No env values in code.
+
+**You MUST:**
+- Run `pnpm run typecheck` at the end. Zero errors.
+- Preserve all existing zod validation; tighten where specified, never loosen.
+- Keep every route's `requireAuth`/`requireRole`/`requireActiveAccount` ordering intact.
+- For DB changes (new columns, constraints), emit a drizzle migration under the repo's migrations location and note it in the summary.
+
+**Deliverable — print this table at the end:**
+
+| ID | Severity | File:line | What changed | Verified by |
+|----|----------|-----------|---------------|-------------|
+| A1 | Critical | ... | ... | (typecheck ✓ / manual note) |
+| ... | ... | ... | ... | ... |
+
+Then list any item you could NOT fully fix and why, plus the recommended next step.

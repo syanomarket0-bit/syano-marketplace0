@@ -3595,7 +3595,22 @@
     "address_saved_desc": "Your delivery address has been saved locally",
     "connected_accounts": "Connected Accounts",
     "back_home": "Home",
-    "login_required": "Please log in to view this page"
+    "login_required": "Please log in to view this page",
+    "push_title": "Push Notifications",
+    "push_desc": "Receive instant alerts for order updates, new messages, and more — even when Syano is closed.",
+    "push_status_granted": "Enabled",
+    "push_status_denied": "Blocked by browser",
+    "push_status_default": "Not set up",
+    "push_subscribed": "Active — notifications are on",
+    "push_not_subscribed": "Inactive — notifications are off",
+    "push_enable_btn": "Enable Notifications",
+    "push_disable_btn": "Disable Notifications",
+    "push_enabling": "Enabling...",
+    "push_disabling": "Disabling...",
+    "push_denied_help": "Notifications are blocked. Click the lock icon in your browser's address bar and allow notifications, then refresh the page.",
+    "push_unsupported": "Your browser does not support push notifications.",
+    "push_enabled_toast": "Notifications enabled",
+    "push_disabled_toast": "Notifications disabled"
   },
   "map": {
     "deliver_here": "Deliver my order here",

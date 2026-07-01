@@ -3595,7 +3595,22 @@
     "address_saved_desc": "تم حفظ عنوان التوصيل محلياً",
     "connected_accounts": "الحسابات المرتبطة",
     "back_home": "الرئيسية",
-    "login_required": "يجب تسجيل الدخول لعرض هذه الصفحة"
+    "login_required": "يجب تسجيل الدخول لعرض هذه الصفحة",
+    "push_title": "الإشعارات الفورية",
+    "push_desc": "احصل على تنبيهات لحظية بشأن تحديثات الطلبات والرسائل الجديدة وغيرها — حتى عند إغلاق سيانو.",
+    "push_status_granted": "مفعّلة",
+    "push_status_denied": "محظورة من المتصفح",
+    "push_status_default": "غير مُعدّة",
+    "push_subscribed": "نشطة — الإشعارات مفعّلة",
+    "push_not_subscribed": "غير نشطة — الإشعارات معطّلة",
+    "push_enable_btn": "تفعيل الإشعارات",
+    "push_disable_btn": "إيقاف الإشعارات",
+    "push_enabling": "جارٍ التفعيل...",
+    "push_disabling": "جارٍ الإيقاف...",
+    "push_denied_help": "الإشعارات محظورة. انقر على أيقونة القفل في شريط العنوان واسمح بالإشعارات، ثم أعِد تحميل الصفحة.",
+    "push_unsupported": "متصفحك لا يدعم الإشعارات الفورية.",
+    "push_enabled_toast": "تم تفعيل الإشعارات",
+    "push_disabled_toast": "تم إيقاف الإشعارات"
   },
   "map": {
     "deliver_here": "وصّل طلبي إلى هنا",

@@ -12,6 +12,7 @@ import {
   CheckCircle, Link2, ArrowLeft, ArrowRight, Facebook,
   User, Phone, MapPin, Home, Briefcase, MoreHorizontal,
   Loader2, Save, ChevronDown, Building2, Navigation,
+  Bell, BellOff, BellRing, AlertTriangle,
 } from "lucide-react";
 
 interface SavedAddress {
@@ -66,6 +67,187 @@ function Field({ label, error, children }: { label: string; error?: string; chil
 
 const inputCls =
   "w-full h-10 px-3 rounded-xl border border-border bg-background text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500/60 transition-all";
+
+/* ── Push helpers ──────────────────────────────────────────────────────────── */
+const PUSH_STORAGE_KEY = "syano_push_permission_asked";
+
+function urlB64ToU8(b64: string): Uint8Array {
+  const pad = "=".repeat((4 - (b64.length % 4)) % 4);
+  const raw = atob((b64 + pad).replace(/-/g, "+").replace(/_/g, "/"));
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)));
+}
+
+async function fetchVapidKey(): Promise<string | null> {
+  try {
+    const r = await fetch("/api/push-subscriptions/vapid-public-key");
+    if (!r.ok) return null;
+    const { publicKey } = await r.json() as { publicKey?: string };
+    return publicKey ?? null;
+  } catch { return null; }
+}
+
+/* ── NotificationsSection ──────────────────────────────────────────────────── */
+function NotificationsSection() {
+  const { t } = useTranslation();
+  const { toast } = useToast();
+
+  type PermState = "granted" | "denied" | "default" | "unsupported";
+  const [perm, setPerm]           = useState<PermState>("default");
+  const [subscribed, setSubscribed] = useState(false);
+  const [loading, setLoading]     = useState<"enable" | "disable" | null>(null);
+  const [vapidReady, setVapidReady] = useState(true);
+
+  useEffect(() => {
+    if (typeof Notification === "undefined" || !("serviceWorker" in navigator)) {
+      setPerm("unsupported");
+      return;
+    }
+    setPerm(Notification.permission as PermState);
+    navigator.serviceWorker.ready.then((reg) =>
+      reg.pushManager.getSubscription().then((sub) => setSubscribed(!!sub))
+    ).catch(() => {});
+    fetchVapidKey().then((k) => setVapidReady(!!k));
+  }, []);
+
+  async function handleEnable() {
+    if (typeof Notification === "undefined") return;
+    setLoading("enable");
+    try {
+      const permission = await Notification.requestPermission();
+      setPerm(permission as PermState);
+      if (permission !== "granted") { setLoading(null); return; }
+
+      const vapidKey = await fetchVapidKey();
+      if (!vapidKey) { setLoading(null); return; }
+
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlB64ToU8(vapidKey) as unknown as ArrayBuffer,
+      });
+
+      const token = localStorage.getItem("token") ?? localStorage.getItem("syano_token");
+      await fetch("/api/push-subscriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({
+          endpoint: sub.endpoint,
+          keys: {
+            p256dh: btoa(String.fromCharCode(...new Uint8Array(sub.getKey("p256dh")!))),
+            auth:   btoa(String.fromCharCode(...new Uint8Array(sub.getKey("auth")!))),
+          },
+          userAgent: navigator.userAgent,
+        }),
+      });
+
+      localStorage.setItem(PUSH_STORAGE_KEY, "asked");
+      setSubscribed(true);
+      toast({ title: t("account.push_enabled_toast") });
+    } catch {
+      /* ignore */
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  async function handleDisable() {
+    setLoading("disable");
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) {
+        const endpoint = sub.endpoint;
+        await sub.unsubscribe();
+        const token = localStorage.getItem("token") ?? localStorage.getItem("syano_token");
+        await fetch("/api/push-subscriptions", {
+          method: "DELETE",
+          headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({ endpoint }),
+        });
+      }
+      localStorage.removeItem(PUSH_STORAGE_KEY);
+      setSubscribed(false);
+      toast({ title: t("account.push_disabled_toast") });
+    } catch {
+      /* ignore */
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  const isUnsupported = perm === "unsupported" || !vapidReady;
+  const isDenied = perm === "denied";
+
+  const statusColor = subscribed
+    ? "text-emerald-600 dark:text-emerald-400"
+    : isDenied
+      ? "text-rose-500"
+      : "text-muted-foreground";
+
+  const StatusIcon = subscribed ? BellRing : isDenied ? AlertTriangle : BellOff;
+  const statusText = subscribed
+    ? t("account.push_subscribed")
+    : isDenied
+      ? t("account.push_status_denied")
+      : t("account.push_not_subscribed");
+
+  return (
+    <SectionCard>
+      <SectionHeader
+        icon={Bell}
+        title={t("account.push_title")}
+        desc={t("account.push_desc")}
+      />
+
+      {isUnsupported ? (
+        <p className="text-sm text-muted-foreground">{t("account.push_unsupported")}</p>
+      ) : (
+        <div className="space-y-4">
+          {/* Status row */}
+          <div className="flex items-center gap-2.5 rounded-xl border border-border bg-background/60 px-4 py-3">
+            <StatusIcon className={`h-4 w-4 shrink-0 ${statusColor}`} />
+            <span className={`text-sm font-medium ${statusColor}`}>{statusText}</span>
+          </div>
+
+          {/* Denied help */}
+          {isDenied && (
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              {t("account.push_denied_help")}
+            </p>
+          )}
+
+          {/* Actions */}
+          {!isDenied && (
+            <div className="flex gap-2 flex-wrap">
+              {!subscribed && (
+                <button
+                  onClick={handleEnable}
+                  disabled={!!loading}
+                  className="inline-flex items-center gap-2 h-10 px-5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-semibold transition-colors"
+                >
+                  {loading === "enable"
+                    ? <><Loader2 className="h-4 w-4 animate-spin" />{t("account.push_enabling")}</>
+                    : <><Bell className="h-4 w-4" />{t("account.push_enable_btn")}</>}
+                </button>
+              )}
+              {subscribed && (
+                <button
+                  onClick={handleDisable}
+                  disabled={!!loading}
+                  className="inline-flex items-center gap-2 h-10 px-5 rounded-xl border border-border hover:bg-muted disabled:opacity-60 disabled:cursor-not-allowed text-sm font-medium transition-colors"
+                >
+                  {loading === "disable"
+                    ? <><Loader2 className="h-4 w-4 animate-spin" />{t("account.push_disabling")}</>
+                    : <><BellOff className="h-4 w-4" />{t("account.push_disable_btn")}</>}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+    </SectionCard>
+  );
+}
 
 export default function AccountPage() {
   const { user, isAuthenticated } = useAuth();
@@ -476,6 +658,9 @@ export default function AccountPage() {
               : "To connect an account, log out and use \"Continue with Google\" when signing back in."}
           </p>
         </SectionCard>
+
+        {/* ══ SECTION 4 — NOTIFICATIONS ════════════════════════════ */}
+        <NotificationsSection />
 
       </div>
 

@@ -98,7 +98,7 @@ endSection();
 
 startSection("Environment");
 console.log(`\n${B}Environment${RE}`);
-const required = ["DATABASE_URL", "SESSION_SECRET"];
+const required = ["DATABASE_URL", "SESSION_SECRET", "TURNSTILE_SECRET_KEY"];
 const optional = ["RESEND_API_KEY", "VAPID_PRIVATE_KEY"];
 const shared   = ["API_PORT", "EMBEDDING_SERVICE_URL", "GOOGLE_CLIENT_ID",
                   "TURNSTILE_ENABLED", "TURNSTILE_SITE_KEY", "VAPID_PUBLIC_KEY"];
@@ -371,7 +371,7 @@ const tsKeySet      = !!(process.env["TURNSTILE_SECRET_KEY"]) || !!(process.env[
 ok(`Google login: ${googleEnabled ? "enabled (GOOGLE_CLIENT_ID set)" : "disabled"}`);
 ok(`Facebook login: ${fbEnabled ? "ENABLED" : "disabled (FACEBOOK_LOGIN_ENABLED=false)"}`);
 if (tsEnabled && tsKeySet) ok("Turnstile: enabled + keys set");
-else if (tsEnabled && !tsKeySet) wa("Turnstile: enabled but TURNSTILE_SECRET_KEY not in Replit Secrets");
+else if (tsEnabled && !tsKeySet) no("Turnstile: enabled but TURNSTILE_SECRET_KEY missing from Replit Secrets — bot protection will fail on login/register");
 else ok("Turnstile: disabled");
 
 endSection();

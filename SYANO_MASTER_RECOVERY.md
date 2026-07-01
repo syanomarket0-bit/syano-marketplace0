@@ -84,6 +84,40 @@ lib/api-client-react/      Shared React hooks
 
 ---
 
+## REQUIRED SECRETS & ENVIRONMENT VARIABLES
+
+> **When importing this project into a new Replit workspace**, you must provision all of the items below before starting workflows. `pnpm import:check` will flag any that are missing.
+
+### Replit Secrets (never visible in env var UI — set via Secrets tab)
+
+| Secret | How to get it | Required? |
+|---|---|---|
+| `SESSION_SECRET` | Generate: `openssl rand -base64 48` | ✅ Hard required — JWT signing key |
+| `TURNSTILE_SECRET_KEY` | Cloudflare Dashboard → Turnstile → your site → Secret key | ✅ Hard required — server-side bot verification on login/register/contact |
+
+> **Current `TURNSTILE_SECRET_KEY`** is `0x4AAAAAADr-R81Kzjprm7sl3rgMT5Otix4` — store this in Replit Secrets every time the project is imported.
+
+### Shared Environment Variables (set via Secrets/Env tab, environment = shared)
+
+| Variable | Value | Required? |
+|---|---|---|
+| `API_PORT` | `8080` | ✅ Required |
+| `EMBEDDING_SERVICE_URL` | `http://localhost:8000` | ✅ Required |
+| `TURNSTILE_ENABLED` | `true` | ✅ Required (set `false` to disable bot protection) |
+| `TURNSTILE_SITE_KEY` | `0x4AAAAAADr-R2toG5P9ZBvI` | ✅ Required — frontend widget key |
+| `GOOGLE_CLIENT_ID` | `345038238714-85pmrf2d863vf3ck406umnmmot72u8s9.apps.googleusercontent.com` | ✅ Required for Google login |
+| `FACEBOOK_LOGIN_ENABLED` | `false` | ✅ Required (keep false — FB login not implemented) |
+| `ROOT_ADMIN_PASSWORD` | `00Amer00` | ✅ Required — bootstrap admin password |
+| `VAPID_PUBLIC_KEY` | `BFoem7SaEkB2P1zJ0O2jUvpWrJ08Hdb49m4OVBqNdlTmBKwxupHzbg4L3x9zBUkxQrvPIyQz4I6tpK69oj90vAI` | For push notifications |
+| `VAPID_EMAIL` | `mailto:admin@syano.online` | For push notifications |
+| `MARKETPLACE_PORT` | `20787` | Vite dev port hint |
+
+### Auto-provisioned by Replit (do not set manually)
+
+`DATABASE_URL` · `PGDATABASE` · `PGHOST` · `PGPORT` · `PGUSER` · `PGPASSWORD` · `REPLIT_DEV_DOMAIN` · `REPLIT_DOMAINS` · `REPL_ID`
+
+---
+
 ## DATABASE
 
 **Engine:** PostgreSQL 16 via Replit built-in (`DATABASE_URL` auto-provisioned)

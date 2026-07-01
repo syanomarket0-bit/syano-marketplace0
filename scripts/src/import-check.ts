@@ -99,7 +99,7 @@ endSection();
 startSection("Environment");
 console.log(`\n${B}Environment${RE}`);
 const required = ["DATABASE_URL", "SESSION_SECRET", "TURNSTILE_SECRET_KEY", "RESEND_API_KEY"];
-const optional = ["VAPID_PRIVATE_KEY"];
+const optional = [] as string[];
 const shared   = ["API_PORT", "EMBEDDING_SERVICE_URL", "GOOGLE_CLIENT_ID",
                   "TURNSTILE_ENABLED", "TURNSTILE_SITE_KEY", "VAPID_PUBLIC_KEY"];
 
@@ -107,6 +107,17 @@ for (const v of required) {
   if (process.env[v]) ok(`${v} set`);
   else no(`${v} not set — required`);
 }
+
+// VAPID: both keys must be present together or push notifications are disabled
+{
+  const pub  = !!process.env["VAPID_PUBLIC_KEY"];
+  const priv = !!process.env["VAPID_PRIVATE_KEY"];
+  if (pub && priv)   ok("VAPID_PRIVATE_KEY set (Web Push enabled)");
+  else if (!pub && !priv) wa("VAPID keys not set — Web Push disabled (SSE in-browser notifications still work)");
+  else if (pub && !priv)  no("VAPID_PUBLIC_KEY set but VAPID_PRIVATE_KEY missing from Secrets — push will silently fail. Add VAPID_PRIVATE_KEY or regenerate the pair.");
+  else                    no("VAPID_PRIVATE_KEY set but VAPID_PUBLIC_KEY missing from shared env — push will silently fail. Add VAPID_PUBLIC_KEY or regenerate the pair.");
+}
+
 for (const v of optional) {
   if (process.env[v]) ok(`${v} set`);
   else wa(`${v} not set (optional — graceful fallback active)`);

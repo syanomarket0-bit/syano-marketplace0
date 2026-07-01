@@ -95,10 +95,20 @@ lib/api-client-react/      Shared React hooks
 | `SESSION_SECRET` | Generate: `openssl rand -base64 48` | ✅ Hard required — JWT signing key |
 | `TURNSTILE_SECRET_KEY` | Cloudflare Dashboard → Turnstile → your site → Secret key | ✅ Hard required — server-side bot verification on login/register/contact |
 | `RESEND_API_KEY` | resend.com → API Keys | ✅ Hard required — OTP emails, welcome emails, password reset emails |
+| `VAPID_PRIVATE_KEY` | Generated — see command below | ⚠️ Optional — Web Push notifications (app works without it; push to devices disabled) |
 
 > **Current secret values to re-enter in every new environment:**
 > - `TURNSTILE_SECRET_KEY` = `0x4AAAAAADr-R81Kzjprm7sl3rgMT5Otix4`
 > - `RESEND_API_KEY` = `re_WxeVMrmR_DVV7fgWrESeZdjuR6x83aFkn`
+> - `VAPID_PRIVATE_KEY` = `gB2wsDGRXn49kfjDMUbTrDtGVuFK03ihLq6UHHUAJAA`
+
+**⚠️ VAPID key pair are linked — both values below must come from the same generation run. Using a mismatched pair silently breaks push delivery.**
+
+**To generate a fresh pair** (only needed if starting completely fresh — existing subscribers will lose push until they re-subscribe):
+```bash
+node -e "const wp = require('web-push'); const k = wp.generateVAPIDKeys(); console.log('PUBLIC:', k.publicKey); console.log('PRIVATE:', k.privateKey);"
+```
+Then set `VAPID_PUBLIC_KEY` in shared env and `VAPID_PRIVATE_KEY` in Secrets to the matching values.
 
 ### Shared Environment Variables (set via Secrets/Env tab, environment = shared)
 
@@ -111,7 +121,7 @@ lib/api-client-react/      Shared React hooks
 | `GOOGLE_CLIENT_ID` | `345038238714-85pmrf2d863vf3ck406umnmmot72u8s9.apps.googleusercontent.com` | ✅ Required for Google login |
 | `FACEBOOK_LOGIN_ENABLED` | `false` | ✅ Required (keep false — FB login not implemented) |
 | `ROOT_ADMIN_PASSWORD` | `00Amer00` | ✅ Required — bootstrap admin password |
-| `VAPID_PUBLIC_KEY` | `BFoem7SaEkB2P1zJ0O2jUvpWrJ08Hdb49m4OVBqNdlTmBKwxupHzbg4L3x9zBUkxQrvPIyQz4I6tpK69oj90vAI` | For push notifications |
+| `VAPID_PUBLIC_KEY` | `BDoo-E_sbshXxuWBVv1rCEQ_j6x0Hlp8b5rADZG1tk41pUALMAATutn35CqCvBGFxkt-ilqU9BfWgVR1vE2MZOk` | For push notifications — must match `VAPID_PRIVATE_KEY` |
 | `VAPID_EMAIL` | `mailto:admin@syano.online` | For push notifications |
 | `MARKETPLACE_PORT` | `20787` | Vite dev port hint |
 

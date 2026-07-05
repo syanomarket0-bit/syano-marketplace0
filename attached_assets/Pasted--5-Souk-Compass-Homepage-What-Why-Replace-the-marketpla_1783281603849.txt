@@ -1,0 +1,56 @@
+#5 - Souk Compass Homepage
+What & Why
+Replace the marketplace homepage with the "Souk Compass" concept: a circular compass hero where five colored spokes radiate from a center hub, each ending in a category chip with an inline product thumbnail. This gives first-time visitors a calm, branded, Arabic-first entry point into the five headline categories, then continues into a standard scrollable storefront below. This is Phase 1 only — a clean, scoped build of the core homepage described here, no mobile-specific layouts, personalization, category overflow, or advanced focus-order work.
+
+The new page becomes the live homepage at /. The current homepage stays reachable at /luxury (that route already exists), so nothing is lost.
+
+Done looks like
+Visiting / shows the Souk Compass hero as the first thing on screen (no banner/carousel): a center hub circle reading "ابدأ من هون" (two lines) with a search icon, five straight colored spokes at 72° spacing, each ending in a category chip (Tabler outline icon + bold Cairo category name in the category's color), with a circular product thumbnail partway along each spoke showing product name and price.
+Two faint dashed concentric circles sit behind the spokes as decorative compass texture.
+Exactly one category's thumbnail has a subtle looping pulse ring and an "الأكثر طلباً" label near its price; which one is trending is fixed/deterministic, not personalized.
+Each product thumbnail is focusable and clicking it navigates to that product's real page (/products/:id).
+Below the compass a muted centered line reads "أو انزل تحت وتصفح كل شي دفعة وحدة ↓".
+Below the hero: a minimal top nav (wordmark, search, wishlist icon, cart icon), a horizontal scrollable category tab strip (active tab tinted with its category color), a "best sellers" product grid, and per-category product sections whose headers use the matching category accent color.
+The page renders right-to-left, headings/body use Cairo, and all prices/numeric tags use IBM Plex Mono.
+The five category colors exist as reusable, centrally-defined design tokens (not hardcoded inline in scattered places), ready to be applied to other pages in a later task.
+The old /luxury homepage still works.
+Out of scope
+Any separate mobile-specific arc/fan layout (the desktop compose may shrink responsively, but do not build a distinct mobile hero).
+Per-user personalization deciding which product pulses.
+Supporting more than 5 categories in the compass, or any "+more"/overflow handling.
+Custom keyboard/focus-order engineering for the circular layout — elements must simply be focusable and clickable in a reasonable default order.
+Applying the new category color tokens to other pages (category pages, cart dots, filter tabs, product tags). Define the tokens and use them in this homepage only; propagation is a later task.
+Extra sections, banners, carousels, gradients, drop shadows, or glow effects beyond what is specified.
+Category color + icon system (core requirement)
+Define these five as reusable tokens (CSS custom properties in index.css plus a small slug→color/icon map in a shared lib file) so the same values drive the compass and can be reused later. Map each to its existing category slug:
+
+Electronics — slug Electronics — #1B7F72 (teal) — Tabler device/mobile icon
+Fashion — slug Fashion — #B84C6B (dusty rose) — Tabler shirt icon
+Home & Kitchen — slug Home & Kitchen — #B98A1D (mustard/gold) — Tabler sofa icon
+Beauty & Care — slug Beauty & Personal Care — #6B5CA5 (muted violet) — Tabler sparkles icon
+Groceries — slug Supermarket & Grocery — #5B7F45 (olive green) — Tabler apple icon
+Use the Arabic category names from the existing category config (getCategoryLabel(slug, "ar")) for chip labels rather than re-typing them.
+
+Steps
+Load fonts and icons. Cairo is already imported globally in index.css; add IBM Plex Mono (weights 400, 500) to the same Google Fonts import so prices/numeric tags have a proper mono face, and add the Tabler outline icon set as a dependency (@tabler/icons-react) in the marketplace workspace. Confirm both render before building UI.
+Define the category color tokens. Add the five category colors as CSS custom properties in index.css alongside the existing token blocks, and add a small reusable map (category slug → color + Tabler icon) in a shared lib module so both CSS and TSX reference one source of truth. Do not restyle any other page.
+Build the compass hero component. Create a self-contained hero (in the spirit of the existing isolated landing pages) with: a center hub (~110–120px, neutral surface, thin border, two-line label + search icon); five straight spokes 72° apart drawn as an SVG/CSS layer (4–6px, rounded caps, category-colored); two faint 1px dashed concentric circles behind them; a category chip at each spoke end (Tabler icon + bold Cairo name in the category color); and a circular product thumbnail (~48–60px, colored border ring) ~55–65% along each spoke with product name (small Cairo) and price (small IBM Plex Mono, category-colored). Position hub/chips/thumbnails with trigonometry so they sit on the spokes. Keep it flat — no gradients/shadows/glow — on a neutral/white background with generous spacing.
+Wire compass products and the trending marker. Fetch products with the existing product hook and pick one product per category by matching the category slug; link each thumbnail to /products/:id. Pick one fixed category as "trending" and give its thumbnail a looping ~2s ease-out pulse ring plus an "الأكثر طلباً" label near its price. Handle categories with no product gracefully (show the chip without a thumbnail). Add the muted "أو انزل تحت..." line centered below the compass.
+Build the storefront below the hero. Add a minimal top nav (wordmark, a search field that routes to the existing search page, a wishlist icon with count from the wishlist context, a cart icon with count from the cart contexts), a horizontal scrollable category tab strip whose active tab is tinted with its category color, a "best sellers" responsive product grid, and per-category product sections whose section headers/underlines use the category accent color. Reuse existing product-card presentation patterns rather than inventing a new card. Ensure the tab strip scrolls correctly under RTL.
+Localize all copy. Route every string through i18n by adding a compass.* block to both en.json and ar.json (keep the two files in sync), including the hub label, the trending label, the scroll hint, and section titles. Use the existing category config for category names.
+Make it the homepage. Point the / route at the new page (import it eagerly like the current primary landing so there's no loading flash), leaving /luxury pointing at the existing landing page. Verify RTL, fonts, compass geometry, product links, and the sections below render correctly and the old homepage is still reachable at /luxury.
+Relevant files
+artifacts/marketplace/src/App.tsx:260
+artifacts/marketplace/src/App.tsx:450
+artifacts/marketplace/src/pages/luxury-landing.tsx
+artifacts/marketplace/src/pages/new-landing.tsx
+artifacts/marketplace/src/index.css:1
+artifacts/marketplace/src/lib/categories.ts
+artifacts/marketplace/src/contexts/CurrencyContext.tsx
+artifacts/marketplace/src/contexts/WishlistContext.tsx
+artifacts/marketplace/src/contexts/GuestCartContext.tsx
+artifacts/marketplace/src/components/LuxuryNavbar.tsx
+artifacts/marketplace/src/components/ProductCard.tsx
+artifacts/marketplace/src/i18n/en.json
+artifacts/marketplace/src/i18n/ar.json
+artifacts/marketplace/package.json

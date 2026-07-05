@@ -3754,5 +3754,16 @@
         "badge": "Copper"
       }
     }
+  },
+  "compass": {
+    "hub_line1": "Start",
+    "hub_line2": "Here",
+    "hub_aria": "Search products",
+    "trending_label": "Most Requested",
+    "scroll_hint": "Or scroll down to browse everything ↓",
+    "best_sellers": "Best Sellers",
+    "all_categories": "All",
+    "see_all": "See all",
+    "search_placeholder": "Search products..."
   }
 }

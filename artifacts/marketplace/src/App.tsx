@@ -2,9 +2,11 @@ import "@/i18n";
 import { lazy, Suspense, useEffect } from "react";
 import { useSettingsSync } from "@/hooks/useSettingsSync";
 import { useViewportScale } from "@/hooks/useViewportScale";
-// LuxuryLandingPage is imported EAGERLY — it is the primary landing page and
+// SoukCompassPage is imported EAGERLY — it is the primary landing page (/) and
 // lazy-loading it creates an extra async chunk waterfall that directly delays LCP.
+// LuxuryLandingPage is kept eager too (moved to /luxury) to avoid chunk-split overhead.
 // All other pages remain lazy since they are not in the critical first-render path.
+import SoukCompassPageEager  from "@/pages/souk-compass";
 import LuxuryLandingPageEager from "@/pages/luxury-landing";
 import { Switch, Route, Router as WouterRouter, useLocation } from "wouter";
 import { useTranslation } from "react-i18next";
@@ -98,6 +100,7 @@ const CourierWallet                  = lazy(() => import("@/pages/courier/wallet
 const AdminCourierPayouts            = lazy(() => import("@/pages/admin/courier-payouts"));
 const WishlistPage                   = lazy(() => import("@/pages/wishlist"));
 const NewLandingPage                 = lazy(() => import("@/pages/new-landing"));
+const SoukCompassPage                = SoukCompassPageEager;
 const LuxuryLandingPage              = LuxuryLandingPageEager;
 /* ── Footer / Info pages ─────────────────────────────────────── */
 const AboutPage           = lazy(() => import("@/pages/about/index"));
@@ -257,7 +260,7 @@ function Router() {
       <Suspense fallback={<PageLoader />}>
         <PageTransition>
           <Switch>
-            <Route path="/" component={LuxuryLandingPage} />
+            <Route path="/" component={SoukCompassPage} />
             <Route path="/account-suspended" component={AccountSuspended} />
             <Route path="/login" component={Login} />
             <Route path="/register" component={Register} />

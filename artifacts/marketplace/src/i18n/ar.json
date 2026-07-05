@@ -3754,5 +3754,16 @@
         "badge": "نحاس"
       }
     }
+  },
+  "compass": {
+    "hub_line1": "ابدأ",
+    "hub_line2": "من هون",
+    "hub_aria": "البحث عن منتجات",
+    "trending_label": "الأكثر طلباً",
+    "scroll_hint": "أو انزل تحت وتصفح كل شي دفعة وحدة ↓",
+    "best_sellers": "الأكثر مبيعاً",
+    "all_categories": "الكل",
+    "see_all": "عرض الكل",
+    "search_placeholder": "ابحث عن منتجات..."
   }
 }

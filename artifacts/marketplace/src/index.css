@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=IBM+Plex+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
 /*
@@ -119,6 +119,15 @@
   --font-2xs:   clamp(9px, 0.5625rem, 10px);  /* was 9-10px tiny labels  */
   --font-xs:    clamp(10px, 0.6875rem, 12px); /* was 10-11px small labels */
   --font-xs-up: clamp(11px, 0.75rem, 14px);  /* was 11-12px sub-labels   */
+}
+
+/* ── Souk Compass category design tokens ────────────────────────────────────── */
+:root {
+  --compass-electronics: #1B7F72;
+  --compass-fashion:     #B84C6B;
+  --compass-home:        #B98A1D;
+  --compass-beauty:      #6B5CA5;
+  --compass-grocery:     #5B7F45;
 }
 
 :root {

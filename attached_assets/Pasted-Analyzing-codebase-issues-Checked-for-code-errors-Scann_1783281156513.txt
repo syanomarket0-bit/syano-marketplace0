@@ -1,0 +1,258 @@
+Analyzing codebase issues
+
+Checked for code errors
+
+Scanning entire codebase for issues
+
+Subagent: Do a thorough line-by-line audit of artifacts/api-server/src/. Look for: 1. Unhandled promise rejections (missing await, missing .catch()) 2. Missing error handling in route handlers 3. SQL injection risks or unsafe queries 4. Race conditions or missing transactions 5. Missing input validation 6. Dead code or unused imports 7. Incorrect TypeScript types (any casts, unsafe assertions) 8. Missing authentication/authorization checks on routes 9. Logic bugs (off-by-one, wrong conditions, etc.) 10. Missing null/undefined checks Report every file and every issue found with file path, line numbers, and severity (critical/high/medium/low).
+Task
+
+Do a thorough line-by-line audit of artifacts/api-server/src/. Look for:
+1. Unhandled promise rejections (missing await, missing .catch())
+2. Missing error handling in route handlers
+3. SQL injection risks or unsafe queries
+4. Race conditions or missing transactions
+5. Missing input validation
+6. Dead code or unused imports
+7. Incorrect TypeScript types (any casts, unsafe assertions)
+8. Missing authentication/authorization checks on routes
+9. Logic bugs (off-by-one, wrong conditions, etc.)
+10. Missing null/undefined checks
+Report every file and every issue found with file path, line numbers, and severity (critical/high/medium/low).
+Show more
+
+18 actions
+1 failed
+Working
+Result
+Audit of artifacts/api-server/src/ (Partial - Key Findings):
+
+Unhandled Promise Rejections / Missing Awaits:
+artifacts/api-server/src/routes/couriers.ts:415-424: addEarning call inside .then() in an async route handler. If it fails, the error is caught but if the fallback also fails, it's a silent failure. More importantly, lines 428, 431, 443 are fire-and-forget promises in a route handler without being awaited. (Severity: Medium)
+artifacts/api-server/src/routes/dashboard.ts:197, 209, 229, 347: Multiple db.execute() calls inside Promise.all but also some floating ones in the file. (Severity: Low)
+artifacts/api-server/src/routes/messaging.ts:516, 527: db.insert/update calls not awaited. (Severity: Medium)
+Missing Error Handling in Route Handlers:
+artifacts/api-server/src/routes/admin.ts: Most routes lack try/catch blocks, relying on a global error handler. While a global handler exists, specific routes performing complex transactions (e.g., line 500, 650) lack local error context or recovery. (Severity: Low)
+SQL Injection Risks:
+artifacts/api-server/src/services/missionAssignmentEngine.ts:43-94: Dynamically constructs SQL strings using template literals and variables (e.g., WHERE ... ${whereClause}). While some use params, the structure construction is risky. (Severity: High)
+artifacts/api-server/src/routes/courier-wallet.ts:141: Uses string concatenation/interpolation for query building instead of full Drizzle/SQL abstraction. (Severity: Medium)
+Race Conditions / Missing Transactions:
+artifacts/api-server/src/routes/couriers.ts:286-291: Uses Promise.all for multiple updates (courierAssignments, orders, deliveryMissions) instead of a database transaction. If one fails, the system is in an inconsistent state. (Severity: High)
+artifacts/api-server/src/routes/couriers.ts:402-411: Same issue as above, marking order as delivered without a transaction. (Severity: High)
+Missing Input Validation:
+artifacts/api-server/src/routes/admin.ts:384, 409, 785: Uses req.params.id and req.body directly without Zod/validation (unlike some other routes that use safeParse). (Severity: Medium)
+artifacts/api-server/src/routes/contact-form.ts:28: Manually parses body with String() and trim() instead of a schema. (Severity: Low)
+Dead Code / Unused Imports:
+artifacts/api-server/src/lib/bootstrap-admin.ts:78: Use of 'any' cast suggests loose typing. (Severity: Low)
+Incorrect TypeScript Types:
+artifacts/api-server/src/routes/couriers.ts:288, 336, 406: Use of as any for status updates (e.g., status: "picked_up" as any) bypassing type safety for enums. (Severity: Medium)
+Missing Authentication/Authorization:
+artifacts/api-server/src/routes/admin.ts:120, 195, 231, 298, 347, 369: These routes are defined BEFORE the router.use("/admin", requireAuth, ...) middleware on line 116. This means they are EXPOSED publicly without admin checks. (Severity: Critical)
+artifacts/api-server/src/routes/auth.ts:227, 370: Authentication routes correctly omit requireAuth, but lack rate limiting in the immediate file context (though lib/rateLimiter exists). (Severity: Medium)
+Logic Bugs:
+artifacts/api-server/src/routes/admin.ts:488: Admin can't delete themselves, but can delete other admins without checking for "Super Admin" status or similar hierarchies. (Severity: Medium)
+Missing Null/Undefined Checks:
+artifacts/api-server/src/routes/dashboard.ts:421-426: Uses extensive as any and manual indexing [0] on database results without verifying rows exist. (Severity: Medium)
+Summary: The most critical finding is the authorization bypass in admin.ts due to route declaration order. High priority items include missing transactions in courier workflows and dynamic SQL generation in services.
+
+
+Subagent: Do a thorough line-by-line audit of artifacts/marketplace/src/. Look for: 1. React hooks violations (missing deps, conditional hooks) 2. Missing error boundaries or error states 3. Unhandled promise rejections in event handlers 4. Memory leaks (missing cleanup in useEffect) 5. Missing loading/error states in data fetching 6. Incorrect key props in lists 7. Dead code or unused imports 8. Hardcoded strings that should use i18n t() 9. Direct DOM manipulation instead of React state 10. Missing null checks on API response data Report every file and every issue with file path, line numbers, and severity.
+Task
+
+Do a thorough line-by-line audit of artifacts/marketplace/src/. Look for:
+1. React hooks violations (missing deps, conditional hooks)
+2. Missing error boundaries or error states
+3. Unhandled promise rejections in event handlers
+4. Memory leaks (missing cleanup in useEffect)
+5. Missing loading/error states in data fetching
+6. Incorrect key props in lists
+7. Dead code or unused imports
+8. Hardcoded strings that should use i18n t()
+9. Direct DOM manipulation instead of React state
+10. Missing null checks on API response data
+Report every file and every issue with file path, line numbers, and severity.
+Show more
+
+14 actions
+Working
+Result
+Detailed audit of artifacts/marketplace/src/ completed. Key findings across 10 categories:
+
+1. React Hooks Violations (Missing Deps, Conditional Hooks)
+artifacts/marketplace/src/App.tsx:212: // eslint-disable-line react-hooks/exhaustive-deps on useEffect in PageFocusManager indicates known missing dependencies (likely t).
+artifacts/marketplace/src/pages/search/index.tsx:146, 157: useLayoutEffect used inside a large component with many state variables; potential performance bottleneck.
+artifacts/marketplace/src/pages/stores.tsx:188: Missing debouncedSearch, sort, verifiedOnly in the useEffect body (only in dep array), though it calls setLimit(12).
+2. Missing Error Boundaries / Error States
+High Severity: Most feature pages (e.g., pages/admin/*, pages/seller/*) do not implement local Error Boundaries. Only global boundary in App.tsx (Line 499) exists.
+Moderate Severity: components/AdminLayout.tsx:123 uses useQuery but only checks isError to render a generic badge error, not a full UI state.
+3. Unhandled Promise Rejections in Event Handlers
+High Severity: components/PushPermissionPrompt.tsx:53 (enable callback) lacks a try/catch block around Notification.requestPermission() and subsequent fetch calls.
+Moderate Severity: components/AuthModal.tsx:108 (handleClick) lacks try/catch around google.accounts.id.initialize.
+Moderate Severity: components/SupportWidget.tsx:144 (handleSend) lacks try/catch around fetch("/api/support/message", ...).
+4. Memory Leaks (Missing Cleanup)
+Low Severity: components/AuthModal.tsx:931: useEffect for body scroll lock handles cleanup correctly.
+Low Severity: components/SupportWidget.tsx:135: useEffect for escape key handles removeEventListener correctly.
+Note: App.tsx:203 appends a div to document.body but relies on a setTimeout for removal (Line 208). If the component unmounts quickly, the div might persist.
+5. Missing Loading/Error States in Data Fetching
+High Severity: pages/wishlist.tsx:193: fetch in useEffect sets data but doesn't handle specific error codes (only catches generic rejection).
+Moderate Severity: components/AdminLayout.tsx:130: Multiple parallel fetch calls in queryFn are not explicitly handled if one fails while others succeed.
+6. Incorrect Key Props in Lists
+Moderate Severity: components/ReviewSection.tsx:262: Uses index i as key for skeleton loaders.
+Moderate Severity: components/RelatedProducts.tsx:46: Uses index i as key for skeleton loaders.
+Low Severity: components/HomeSections/FeaturedDeals.tsx:189: Uses ${deal.id}-${i} which is safe but redundant.
+7. Dead Code or Unused Imports
+Low Severity: App.tsx:439: "Legacy courier dashboard" kept for backward compatibility.
+Low Severity: components/LocationMapModal.tsx: Contains extensive inline CSS injection logic that might be better served by global styles.
+8. Hardcoded Strings (i18n missing)
+Moderate Severity: components/ui/sidebar.tsx:277: "Toggle Sidebar" is hardcoded.
+Moderate Severity: components/PushPermissionPrompt.tsx: Several buttons and labels are hardcoded in English/Arabic without t() calls.
+Low Severity: components/AuthModal.tsx:683: Hardcoded English/Arabic fallback strings instead of using i18n JSON files.
+9. Direct DOM Manipulation
+Moderate Severity: App.tsx:183, 190: document.getElementById and document.createElement used for A11y announcements.
+Moderate Severity: components/AuthModal.tsx:207, 212: Direct DOM manipulation to inject Facebook SDK script.
+10. Missing Null Checks on API Response Data
+High Severity: pages/wishlist.tsx:198: setProducts(Array.isArray(data) ? data : []) is good, but pages/wishlist.tsx:209 uses results.filter(Boolean) which might fail if the API returns an object without id.
+Moderate Severity: components/HomeSections/TrustedStores.tsx:123: r.ok ? r.json() : null followed by .then without checking if data is actually an array before mapping.
+
+Subagent: Do a thorough line-by-line audit of artifacts/mobile/app/ and artifacts/mobile/src/. Look for: 1. Missing error handling in API calls 2. Memory leaks (missing cleanup) 3. Missing loading/error states 4. Hardcoded strings that should use i18n 5. Incorrect navigation patterns 6. Missing null/undefined checks 7. Dead code or unused imports 8. Any hooks violations Report every file and every issue with file path, line numbers, and severity.
+Task
+
+Do a thorough line-by-line audit of artifacts/mobile/app/ and artifacts/mobile/src/. Look for:
+1. Missing error handling in API calls
+2. Memory leaks (missing cleanup)
+3. Missing loading/error states
+4. Hardcoded strings that should use i18n
+5. Incorrect navigation patterns
+6. Missing null/undefined checks
+7. Dead code or unused imports
+8. Any hooks violations
+Report every file and every issue with file path, line numbers, and severity.
+Show more
+
+16 actions
+Working
+Result
+SYANO Mobile Audit Report
+1. Missing Error Handling in API Calls
+artifacts/mobile/app/courier/workspace.tsx: Lines 312-372. Multiple fetch calls (fetchProfile, fetchOffers, fetchAssignment, fetchTracking) inside try...catch blocks have empty catch blocks. Failures will fail silently without user feedback. (Severity: High)
+artifacts/mobile/app/courier/history.tsx: Line 43. fetch call inside try...catch has an empty catch block. (Severity: Medium)
+artifacts/mobile/app/courier/dashboard.tsx: Lines 96, 107, 163. Empty catch blocks for fetchOffers, load, and handleDeclineOffer. (Severity: Medium)
+artifacts/mobile/app/seller/products.tsx: Lines 47, 71. Empty catch blocks for product fetching and deletion. (Severity: Medium)
+artifacts/mobile/app/courier-apply.tsx: Line 43. fetch call for profile check lacks a .catch() or try...catch. (Severity: Medium)
+2. Memory Leaks (Missing Cleanup)
+artifacts/mobile/app/courier/workspace.tsx: Line 194. setInterval for the offer countdown in OfferPanel is correctly cleaned up, but line 381 and 390 initialize intervals without ensuring only one exists (though they are inside useEffect with cleanups, frequent re-renders of dependencies could lead to churn).
+artifacts/mobile/app/courier/dashboard.tsx: Line 293. setInterval inside OfferCard correctly uses clearInterval.
+Audit Result: Most files correctly use clearInterval/clearTimeout in useEffect returns.
+3. Missing Loading/Error States
+artifacts/mobile/app/courier/workspace.tsx: The deriveState function (Line 89) maps !profile to LOADING. However, if fetchProfile fails (silently, see point 1), the app may stay stuck in a LOADING state forever without an error UI. (Severity: High)
+artifacts/mobile/app/seller/orders.tsx: Line 53. Uses useListOrders but does not explicitly handle the error state in the JSX, only isLoading. (Severity: Low)
+4. Hardcoded Strings (Missing i18n)
+artifacts/mobile/app/courier/workspace.tsx:
+Line 211: "sec" (Severity: Low)
+Line 614: "Map view available on mobile" (Severity: Low)
+artifacts/mobile/app/tracking/[missionId].tsx:
+Line 204: "Please check your connection." (Severity: Medium)
+Line 345: "Route" (Severity: Low)
+artifacts/mobile/app/admin/index.tsx: Line 160: "Recent Orders", Line 162: "See all". (Severity: Low)
+artifacts/mobile/app/support.tsx: Line 116: "Sign in to access support", Line 118: "Sign In". (Severity: Medium)
+5. Incorrect Navigation Patterns
+artifacts/mobile/app/verify.tsx: Line 6. Uses router.replace("/") which might bypass expected tab logic if not handled by the root layout. (Severity: Low)
+artifacts/mobile/app/(auth)/login.tsx: Lines 80, 169. Hardcoded router.replace("/(tabs)"). While functional, it bypasses the typed Href system and relies on folder structure. (Severity: Low)
+6. Missing Null/Undefined Checks
+artifacts/mobile/app/(tabs)/index.tsx: Lines 1673-1684. Accesses data.lowStockProducts and data.recentOrders directly. If data is undefined (before fetch completes), this will throw. (Severity: Medium)
+artifacts/mobile/app/(auth)/register.tsx: Line 85. Accesses data.retryAfter after a failed fetch. If the response body isn't JSON or is missing that field, it may crash or show "undefined". (Severity: Medium)
+7. Dead Code or Unused Imports
+artifacts/mobile/app/courier/workspace.tsx: Line 12. KeyboardAvoidingView and Modal are imported but usage in the truncated file appears minimal or potentially replaceable by more specialized components.
+artifacts/mobile/app/verify.tsx: Entire file is a redirect to /. If the verification logic is handled elsewhere, this file is dead code. (Severity: Low)
+8. Hooks Violations
+Audit Result: No significant violations of "Rules of Hooks" (hooks inside loops/conditionals) were found in the audited paths. Hooks are generally used at the top level of components.
+
+Subagent: Do a thorough line-by-line audit of lib/db/src/, lib/api-zod/src/, lib/api-client-react/src/. Look for: 1. Schema issues or missing constraints 2. Incorrect Zod schemas (missing validations, wrong types) 3. Dead code or unused exports 4. Missing null/undefined handling in React hooks 5. Incorrect TypeScript types 6. Any security issues in the shared schemas Report every file and every issue with file path, line numbers, and severity.
+Task
+
+Do a thorough line-by-line audit of lib/db/src/, lib/api-zod/src/, lib/api-client-react/src/. Look for:
+1. Schema issues or missing constraints
+2. Incorrect Zod schemas (missing validations, wrong types)
+3. Dead code or unused exports
+4. Missing null/undefined handling in React hooks
+5. Incorrect TypeScript types
+6. Any security issues in the shared schemas
+Report every file and every issue with file path, line numbers, and severity.
+Show more
+
+12 actions
+1 failed
+Working
+Result
+Audit Report: lib/db/src/, lib/api-zod/src/, lib/api-client-react/src/
+1. Schema issues or missing constraints (lib/db/src/schema/)
+Missing notNull() on Foreign Keys (Low/Medium): Several foreign keys are nullable without clear business justification, potentially leading to orphaned records if logic fails.
+lib/db/src/schema/dispatch_alerts.ts:32: resolvedById is nullable.
+lib/db/src/schema/delivery.ts:34: adminId is nullable.
+Inconsistent onDelete Actions (Medium):
+lib/db/src/schema/orders.ts:24, 53: customerId and orderId lack onDelete strategies (defaults to no action), which may cause friction during user deletion.
+lib/db/src/schema/delivery_missions.ts:31: courierId uses set null but sellerId and customerId use restrict.
+Missing notNull() on likely required fields (Low):
+lib/db/src/schema/users.ts:9: email is unique but not explicitly notNull(). While Drizzle handles unique as a constraint, explicitly marking required fields is safer.
+Precision and Scale (Verified): Most numeric fields correctly specify { precision: 10, scale: 2 } or { precision: 10, scale: 7 } for coordinates. No naked numeric() calls were found.
+2. Incorrect Zod schemas (lib/api-zod/src/)
+Missing Validations (Medium/Security): Generated schemas in lib/api-zod/src/generated/api.ts use generic z.string() for sensitive fields.
+LoginInput and RegisterInput: password is z.string() with no min() length validation.
+RegisterInput: email and name are generic z.string() without .email() or length constraints.
+ProductInput: name, description, and category are generic z.string().
+Note: These are likely generated from OpenAPI specs. If the spec lacks constraints (minLength, pattern, format: email), the Zod schemas will be permissive.
+3. Dead code or unused exports
+React Hooks (Low): Many hooks in lib/api-client-react/src/ are exported but only used within their own library (primarily for export in index.ts). If the consuming apps (Marketplace, Mobile) don't use them, they are dead code.
+lib/api-client-react/src/messaging.ts: 15+ hooks (e.g., useStartConversation, useGetUnreadCount) are only referenced in the same file.
+lib/api-client-react/src/best-sellers.ts: useGetBestSellers is only referenced in the same file.
+lib/api-client-react/src/delivery-zones.ts: useGetDeliveryZones is only referenced in the same file.
+4. Missing null/undefined handling in React hooks (lib/api-client-react/src/)
+Unsafe Data Access (Medium): Hooks return the result of useQuery directly. Consuming code might access data.property before checking isLoading or isSuccess.
+lib/api-client-react/src/custom-fetch.ts:160: data.trim() is called on a value that could potentially be empty if not handled.
+General Pattern: Generated hooks in lib/api-client-react/src/generated/api.ts return the TanStack Query object, but the library doesn't provide wrapped selectors that ensure data presence.
+5. Incorrect TypeScript types
+Metadata as unknown (Low):
+lib/api-zod/src/generated/types/adminAuditLogEntryMetadata.ts: AdminAuditLogEntryMetadata is typed as {[key: string]: unknown} | null. This is safe but requires type casting in consumers.
+Generated Types: api-zod types for LoginInput mark email and phone as optional, which is correct for "one or the other" logic but might require a custom Zod refinement for strict "at least one" validation.
+6. Security issues in shared schemas
+Exposure of Sensitive Fields (Low/Risk):
+lib/db/src/schema/users.ts:54: User type is an inferred Select from usersTable, which includes passwordHash, otpHash, and resetOtpHash. If these types are used directly in API responses without .omit() or mapping, hashes could be leaked.
+lib/api-zod/src/generated/types/user.ts: Should be checked to ensure it does not include internal hash fields. (The current audit shows they are excluded from the Insert schema, but the Select type remains broad).
+Collecting subagent results
+
+Collecting subagent results
+
+Collecting audit results
+Analyzing subagent results
+
+Analyzing subagent results
+Let me read the full results from the subagents and then start fixing issues. The most critical issues found are:
+
+CRITICAL: Admin routes in admin.ts exposed publicly without auth checks (routes declared before auth middleware)
+HIGH: Missing transactions in courier workflows (couriers.ts lines 286-291, 402-411)
+HIGH: Dynamic SQL construction in missionAssignmentEngine.ts (potential SQL injection)
+MEDIUM: Unawaited promises in messaging.ts (lines 516, 527)
+MEDIUM: Missing as any type casts in couriers.ts
+MEDIUM: Missing input validation in admin.ts
+MEDIUM: Race conditions in courier workflows
+I need to get the full marketplace and mobile audit results, then dive into the specific files with critical issues to understand the context better before fixing them.
+
+Let me get the full audit reports and start reading the critical files simultaneously.
+
+
+2 actions
+Now I have the full picture. Let me read the critical files before fixing anything.
+
+
+5 actions
+Now let me read the remaining critical files before fixing everything.
+
+
+5 actions
+Good — now I have the full picture. The real actionable issues are:
+
+1. **Missing DB transactions** in courier status transitions (`Promise.all` across multiple tables — inconsistent state if one fails)
+2. **`as any` enum casts** throughout couriers.ts and missionAssignmentEngine.ts (status fields exist as enums in the schema but are cast away)
+3. **`pool` import missing** from couriers.ts (needed for transactions)
+
+Let me scan the schema for enum definitions and all files needing fixes simultaneously.

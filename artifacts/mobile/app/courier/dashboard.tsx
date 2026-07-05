@@ -93,7 +93,7 @@ export default function CourierDashboardScreen() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (res.ok) setOffers((await res.json()) as MissionOffer[]);
-    } catch { /* ignore */ }
+    } catch (e) { console.error("[dashboard] fetchOffers error", e); }
   }, [token]);
 
   const load = useCallback(async (isRefresh = false) => {
@@ -104,7 +104,7 @@ export default function CourierDashboardScreen() {
       });
       if (profileRes.ok) setStats((await profileRes.json()) as CourierStats);
       await fetchOffers();
-    } catch { /* ignore */ }
+    } catch (e) { console.error("[dashboard] load error", e); }
     finally { setLoading(false); }
   }, [token, fetchOffers]);
 

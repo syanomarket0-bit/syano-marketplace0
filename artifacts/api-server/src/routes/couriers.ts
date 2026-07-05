@@ -283,12 +283,12 @@ router.patch("/couriers/assignments/:id/pickup", requireAuth, requireActiveAccou
     res.status(400).json({ error: "Order must be in courier_assigned status" }); return;
   }
 
-  await Promise.all([
-    db.update(courierAssignmentsTable).set({ pickedUpAt: new Date(), updatedAt: new Date() }).where(eq(courierAssignmentsTable.id, assignment.id)),
-    db.update(ordersTable).set({ status: "picked_up" as any, updatedAt: new Date() }).where(eq(ordersTable.id, order.id)),
-    db.update(deliveryMissionsTable).set({ status: "PICKED_UP" as any, updatedAt: new Date() }).where(eq(deliveryMissionsTable.orderId, order.id)),
-    insertStatusHistory(order.id, "courier_assigned", "picked_up", userId, "courier"),
-  ]);
+  await db.transaction(async (tx) => {
+    await tx.update(courierAssignmentsTable).set({ pickedUpAt: new Date(), updatedAt: new Date() }).where(eq(courierAssignmentsTable.id, assignment.id));
+    await tx.update(ordersTable).set({ status: "picked_up" as any, updatedAt: new Date() }).where(eq(ordersTable.id, order.id));
+    await tx.update(deliveryMissionsTable).set({ status: "PICKED_UP" as any, updatedAt: new Date() }).where(eq(deliveryMissionsTable.orderId, order.id));
+    await tx.insert(orderStatusHistoryTable).values({ orderId: order.id, fromStatus: "courier_assigned", toStatus: "picked_up", changedBy: userId, changedByRole: "courier" });
+  });
 
   await createNotification({
     userId: order.customerId, type: "order_picked_up",
@@ -330,15 +330,12 @@ router.patch("/couriers/assignments/:id/start-delivery", requireAuth, requireAct
     res.status(400).json({ error: "Order must be in picked_up status to start delivery" }); return;
   }
 
-  await Promise.all([
-    db.update(courierAssignmentsTable).set({ status: "out_for_delivery", updatedAt: new Date() })
-      .where(eq(courierAssignmentsTable.id, assignment.id)),
-    db.update(ordersTable).set({ status: "out_for_delivery" as any, updatedAt: new Date() })
-      .where(eq(ordersTable.id, order.id)),
-    db.update(deliveryMissionsTable).set({ status: "IN_TRANSIT" as any, updatedAt: new Date() })
-      .where(eq(deliveryMissionsTable.orderId, order.id)),
-    insertStatusHistory(order.id, "picked_up", "out_for_delivery", userId, "courier"),
-  ]);
+  await db.transaction(async (tx) => {
+    await tx.update(courierAssignmentsTable).set({ status: "out_for_delivery", updatedAt: new Date() }).where(eq(courierAssignmentsTable.id, assignment.id));
+    await tx.update(ordersTable).set({ status: "out_for_delivery" as any, updatedAt: new Date() }).where(eq(ordersTable.id, order.id));
+    await tx.update(deliveryMissionsTable).set({ status: "IN_TRANSIT" as any, updatedAt: new Date() }).where(eq(deliveryMissionsTable.orderId, order.id));
+    await tx.insert(orderStatusHistoryTable).values({ orderId: order.id, fromStatus: "picked_up", toStatus: "out_for_delivery", changedBy: userId, changedByRole: "courier" });
+  });
 
   await createNotification({
     userId: order.customerId, type: "order_out_for_delivery",
@@ -399,16 +396,12 @@ router.patch("/couriers/assignments/:id/deliver", requireAuth, requireActiveAcco
   const fee = order.deliveryFee ? parseFloat(String(order.deliveryFee)) : 0;
   const courierCut = parseFloat((fee * 0.8).toFixed(2));
 
-  await Promise.all([
-    db.update(courierAssignmentsTable).set({
-      status: "delivered", deliveredAt: new Date(), updatedAt: new Date(),
-    }).where(eq(courierAssignmentsTable.id, assignment.id)),
-    db.update(ordersTable).set({ status: "delivered" as any, updatedAt: new Date() }).where(eq(ordersTable.id, order.id)),
-    db.update(couriersTable).set({
-      completedDeliveries: courier.completedDeliveries + 1, updatedAt: new Date(),
-    }).where(eq(couriersTable.id, courier.id)),
-    insertStatusHistory(order.id, order.status as string, "delivered", userId, "courier"),
-  ]);
+  await db.transaction(async (tx) => {
+    await tx.update(courierAssignmentsTable).set({ status: "delivered", deliveredAt: new Date(), updatedAt: new Date() }).where(eq(courierAssignmentsTable.id, assignment.id));
+    await tx.update(ordersTable).set({ status: "delivered" as any, updatedAt: new Date() }).where(eq(ordersTable.id, order.id));
+    await tx.update(couriersTable).set({ completedDeliveries: courier.completedDeliveries + 1, updatedAt: new Date() }).where(eq(couriersTable.id, courier.id));
+    await tx.insert(orderStatusHistoryTable).values({ orderId: order.id, fromStatus: order.status as string, toStatus: "delivered", changedBy: userId, changedByRole: "courier" });
+  });
 
   if (fee > 0) {
     // A9: update wallet (also inserts transaction record with balance tracking)
@@ -475,16 +468,11 @@ router.patch("/couriers/assignments/:id/fail-delivery", requireAuth, requireActi
   const { notes, failureReason } = req.body;
   const reasonLabel = failureReason ?? notes ?? null;
 
-  await Promise.all([
-    db.update(courierAssignmentsTable).set({
-      status: "delivery_failed",
-      notes: reasonLabel,
-      updatedAt: new Date(),
-    }).where(eq(courierAssignmentsTable.id, assignment.id)),
-    db.update(ordersTable).set({ status: "delivery_failed" as any, updatedAt: new Date() })
-      .where(eq(ordersTable.id, order.id)),
-    insertStatusHistory(order.id, "out_for_delivery", "delivery_failed", userId, "courier"),
-  ]);
+  await db.transaction(async (tx) => {
+    await tx.update(courierAssignmentsTable).set({ status: "delivery_failed", notes: reasonLabel, updatedAt: new Date() }).where(eq(courierAssignmentsTable.id, assignment.id));
+    await tx.update(ordersTable).set({ status: "delivery_failed" as any, updatedAt: new Date() }).where(eq(ordersTable.id, order.id));
+    await tx.insert(orderStatusHistoryTable).values({ orderId: order.id, fromStatus: "out_for_delivery", toStatus: "delivery_failed", changedBy: userId, changedByRole: "courier" });
+  });
 
   // Auto-transition: BUSY → ONLINE after mission fails (unless manually OFFLINE)
   setCourierOnlineAfterMission(courier.id).catch(() => {});

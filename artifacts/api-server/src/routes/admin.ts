@@ -388,41 +388,51 @@ router.post("/admin/users/:id/suspend", async (req, res): Promise<void> => {
 
   const reason = typeof req.body?.reason === "string" ? req.body.reason.trim() : "";
 
-  const [user] = await db
-    .select({ id: usersTable.id, name: usersTable.name, email: usersTable.email, role: usersTable.role, accountStatus: usersTable.accountStatus })
-    .from(usersTable)
-    .where(eq(usersTable.id, id));
-  if (!user) { res.status(404).json({ error: "User not found" }); return; }
-  if (user.role === "admin") { res.status(400).json({ error: "Cannot suspend admin accounts" }); return; }
+  try {
+    const [user] = await db
+      .select({ id: usersTable.id, name: usersTable.name, email: usersTable.email, role: usersTable.role, accountStatus: usersTable.accountStatus })
+      .from(usersTable)
+      .where(eq(usersTable.id, id));
+    if (!user) { res.status(404).json({ error: "User not found" }); return; }
+    if (user.role === "admin") { res.status(400).json({ error: "Cannot suspend admin accounts" }); return; }
 
-  await db.update(usersTable)
-    .set({ accountStatus: "suspended", suspendedReason: reason || null, suspendedBy: req.user!.userId, suspendedAt: new Date() })
-    .where(eq(usersTable.id, id));
+    await db.update(usersTable)
+      .set({ accountStatus: "suspended", suspendedReason: reason || null, suspendedBy: req.user!.userId, suspendedAt: new Date() })
+      .where(eq(usersTable.id, id));
 
-  kickSseUser(id);
+    kickSseUser(id);
 
-  await logAudit(req.user!.userId, "SUSPEND_USER", "user", String(id), { name: user.name, email: user.email, reason: reason || null });
+    await logAudit(req.user!.userId, "SUSPEND_USER", "user", String(id), { name: user.name, email: user.email, reason: reason || null });
 
-  res.json({ message: "User suspended", userId: id, accountStatus: "suspended" });
+    res.json({ message: "User suspended", userId: id, accountStatus: "suspended" });
+  } catch (err) {
+    logger.error({ err }, "[admin] POST /admin/users/:id/suspend failed");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.post("/admin/users/:id/reactivate", async (req, res): Promise<void> => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid user ID" }); return; }
 
-  const [user] = await db
-    .select({ id: usersTable.id, name: usersTable.name, email: usersTable.email, accountStatus: usersTable.accountStatus })
-    .from(usersTable)
-    .where(eq(usersTable.id, id));
-  if (!user) { res.status(404).json({ error: "User not found" }); return; }
+  try {
+    const [user] = await db
+      .select({ id: usersTable.id, name: usersTable.name, email: usersTable.email, accountStatus: usersTable.accountStatus })
+      .from(usersTable)
+      .where(eq(usersTable.id, id));
+    if (!user) { res.status(404).json({ error: "User not found" }); return; }
 
-  await db.update(usersTable)
-    .set({ accountStatus: "active", suspendedReason: null, suspendedBy: null, suspendedAt: null })
-    .where(eq(usersTable.id, id));
+    await db.update(usersTable)
+      .set({ accountStatus: "active", suspendedReason: null, suspendedBy: null, suspendedAt: null })
+      .where(eq(usersTable.id, id));
 
-  await logAudit(req.user!.userId, "REACTIVATE_USER", "user", String(id), { name: user.name, email: user.email });
+    await logAudit(req.user!.userId, "REACTIVATE_USER", "user", String(id), { name: user.name, email: user.email });
 
-  res.json({ message: "User reactivated", userId: id, accountStatus: "active" });
+    res.json({ message: "User reactivated", userId: id, accountStatus: "active" });
+  } catch (err) {
+    logger.error({ err }, "[admin] POST /admin/users/:id/reactivate failed");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 router.post("/admin/users/:id/verify", requireAuth, requireRole("admin"), async (req, res): Promise<void> => {
@@ -786,6 +796,7 @@ router.patch("/admin/orders/:id/status", async (req, res): Promise<void> => {
   const id = parseInt(req.params.id, 10);
   if (isNaN(id)) { res.status(400).json({ error: "Invalid order ID" }); return; }
 
+  try {
   const [existing] = await db.select().from(ordersTable).where(eq(ordersTable.id, id));
   if (!existing) { res.status(404).json({ error: "Order not found" }); return; }
 
@@ -891,6 +902,10 @@ router.patch("/admin/orders/:id/status", async (req, res): Promise<void> => {
   );
 
   res.json({ message: "Order status updated", status });
+  } catch (err) {
+    logger.error({ err }, "[admin] PATCH /admin/orders/:id/status failed");
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
 // ─── AUDIT LOGS ──────────────────────────────────────────────────────────────

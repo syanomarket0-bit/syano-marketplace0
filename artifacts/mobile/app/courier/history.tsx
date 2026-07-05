@@ -44,7 +44,7 @@ export default function CourierHistoryScreen() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (r.ok) setHistory((await r.json()) as DeliveryRecord[]);
-    } catch { /* ignore */ }
+    } catch (e) { console.error("[history] load error", e); }
     finally { setLoading(false); setRefreshing(false); }
   }, [token]);
 

@@ -316,7 +316,7 @@ export default function CourierWorkspaceScreen() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (r.ok) setProfile(await r.json());
-    } catch {}
+    } catch (e) { console.error("[workspace] fetchProfile error", e); }
   }, [token]);
 
   const fetchOffers = useCallback(async () => {
@@ -326,7 +326,7 @@ export default function CourierWorkspaceScreen() {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (r.ok) setOffers(await r.json());
-    } catch {}
+    } catch (e) { console.error("[workspace] fetchOffers error", e); }
   }, [token]);
 
   const fetchAssignment = useCallback(async () => {
@@ -340,7 +340,7 @@ export default function CourierWorkspaceScreen() {
         const active = data.filter(a => ["assigned","picked_up","out_for_delivery"].includes(a.status));
         setAssignment(active.length > 0 ? active[0] : null);
       }
-    } catch {}
+    } catch (e) { console.error("[workspace] fetchAssignment error", e); }
   }, [token]);
 
   const pushMapUpdate = useCallback((td: TrackingData) => {
@@ -368,7 +368,7 @@ export default function CourierWorkspaceScreen() {
         setTracking(td);
         pushMapUpdate(td);
       }
-    } catch {}
+    } catch (e) { console.error("[workspace] fetchTracking error", e); }
   }, [token, pushMapUpdate]);
 
   const pollAll = useCallback(async () => {

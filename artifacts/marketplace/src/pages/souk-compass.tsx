@@ -8,22 +8,24 @@
 
 import {
   useState, useMemo, useEffect, useRef, useCallback,
-  type CSSProperties, type FormEvent, type MutableRefObject,
+  type CSSProperties, type MutableRefObject,
 } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useLocation } from "wouter";
-import { Search, Heart, ShoppingCart } from "lucide-react";
+import { Search } from "lucide-react";
 import {
   useListProducts,
   getListProductsQueryKey,
   type Product,
 } from "@workspace/api-client-react";
 import { useCurrency } from "@/contexts/CurrencyContext";
-import { useWishlist } from "@/contexts/WishlistContext";
-import { useGuestCart } from "@/contexts/GuestCartContext";
+import { useTheme } from "next-themes";
 import { CATEGORIES } from "@/lib/categories";
 import { COMPASS_CATEGORIES, TRENDING_SLUG, type CompassCategory } from "@/lib/compassCategories";
 import { ProductCard } from "@/components/ProductCard";
+import { LuxuryNavbar } from "@/components/LuxuryNavbar";
+import { LuxColorCtx, C, CL, LUX_JOIN_FOOTER_CSS, type ColorTokens } from "@/lib/luxShared";
+import { LuxJoinSection, LuxFooterBar } from "./luxury-landing";
 
 /* ── CSS injection ──────────────────────────────────────────────────────────── */
 
@@ -329,87 +331,6 @@ function CompassHero({
   );
 }
 
-/* ── Minimal sticky nav ─────────────────────────────────────────────────────── */
-
-function SoukNav({
-  wishlistCount, cartCount,
-}: {
-  wishlistCount: number;
-  cartCount: number;
-}) {
-  const { t } = useTranslation();
-  const [query, setQuery] = useState("");
-  const [, navigate] = useLocation();
-
-  const handleSubmit = useCallback((e: FormEvent) => {
-    e.preventDefault();
-    navigate(query.trim()
-      ? `/search?q=${encodeURIComponent(query.trim())}`
-      : "/search");
-  }, [query, navigate]);
-
-  const badgeStyle: CSSProperties = {
-    position: "absolute", top: -6, insetInlineEnd: -6,
-    minWidth: 16, height: 16, borderRadius: 9999,
-    background: "var(--color-emerald-500, #10b981)",
-    color: "#fff", fontSize: 9, fontWeight: 700,
-    display: "flex", alignItems: "center", justifyContent: "center",
-    padding: "0 3px", lineHeight: 1,
-  };
-
-  return (
-    <nav style={{
-      position: "sticky", top: 0, zIndex: 50,
-      background: "var(--color-background)",
-      borderBottom: "1px solid var(--color-border)",
-      display: "flex", alignItems: "center", gap: 12,
-      padding: "0 20px", height: 52, direction: "rtl",
-    } as CSSProperties}>
-      <Link href="/" style={{
-        fontFamily: "'Cairo', sans-serif", fontWeight: 900,
-        fontSize: 18, color: "var(--color-primary)", textDecoration: "none",
-        whiteSpace: "nowrap", letterSpacing: "0.04em",
-      }}>
-        سيانو
-      </Link>
-
-      <form onSubmit={handleSubmit} style={{ flex: 1, maxWidth: 360 }}>
-        <div style={{ position: "relative" }}>
-          <Search size={14} style={{
-            position: "absolute", insetInlineEnd: 10, top: "50%",
-            transform: "translateY(-50%)", opacity: 0.4, pointerEvents: "none",
-          }} />
-          <input
-            value={query}
-            onChange={e => setQuery(e.target.value)}
-            placeholder={t("compass.search_placeholder")}
-            style={{
-              width: "100%", height: 34, borderRadius: 9999,
-              border: "1px solid var(--color-border)",
-              background: "var(--color-muted)",
-              paddingInlineStart: 12, paddingInlineEnd: 32,
-              fontSize: 13, fontFamily: "'Cairo', sans-serif",
-              outline: "none", direction: "rtl",
-              color: "var(--color-foreground)",
-            } as CSSProperties}
-          />
-        </div>
-      </form>
-
-      <div style={{ display: "flex", alignItems: "center", gap: 16, marginInlineStart: "auto" }}>
-        <Link href="/wishlist" style={{ position: "relative", color: "var(--color-foreground)", display: "flex" }} aria-label={t("nav.wishlist")}>
-          <Heart size={20} />
-          {wishlistCount > 0 && <span style={badgeStyle}>{wishlistCount}</span>}
-        </Link>
-        <Link href="/cart" style={{ position: "relative", color: "var(--color-foreground)", display: "flex" }} aria-label={t("nav.cart")}>
-          <ShoppingCart size={20} />
-          {cartCount > 0 && <span style={badgeStyle}>{cartCount}</span>}
-        </Link>
-      </div>
-    </nav>
-  );
-}
-
 /* ── Horizontal category tab strip ─────────────────────────────────────────── */
 
 function CategoryTabs({
@@ -444,7 +365,7 @@ function CategoryTabs({
 
   return (
     <div style={{
-      position: "sticky", top: 52, zIndex: 40,
+      position: "sticky", top: 60, zIndex: 40,
       background: "var(--color-background)",
       borderBottom: "1px solid var(--color-border)",
       overflowX: "auto", display: "flex", direction: "rtl",
@@ -474,9 +395,9 @@ export default function SoukCompassPage() {
     query: { staleTime: 5 * 60 * 1000, queryKey: getListProductsQueryKey({}) },
   });
 
-  const { format }               = useCurrency();
-  const { count: wishlistCount } = useWishlist();
-  const { guestTotal: cartCount } = useGuestCart() as { guestTotal: number } & ReturnType<typeof useGuestCart>;
+  const { format }        = useCurrency();
+  const { resolvedTheme } = useTheme();
+  const lc = (resolvedTheme === "dark" ? C : CL) as ColorTokens;
 
   const [activeCategory, setActiveCategory] = useState("all");
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
@@ -500,10 +421,18 @@ export default function SoukCompassPage() {
   );
 
   useEffect(() => {
-    const el = document.createElement("style");
-    el.textContent = COMPASS_CSS;
-    document.head.appendChild(el);
-    return () => { document.head.removeChild(el); };
+    const el1 = document.createElement("style");
+    el1.textContent = COMPASS_CSS;
+    document.head.appendChild(el1);
+
+    const el2 = document.createElement("style");
+    el2.textContent = LUX_JOIN_FOOTER_CSS;
+    document.head.appendChild(el2);
+
+    return () => {
+      document.head.removeChild(el1);
+      document.head.removeChild(el2);
+    };
   }, []);
 
   const gridStyle: CSSProperties = {
@@ -537,7 +466,7 @@ export default function SoukCompassPage() {
       </section>
 
       {/* ── Storefront ───────────────────────────────────────────────── */}
-      <SoukNav wishlistCount={wishlistCount} cartCount={cartCount} />
+      <LuxuryNavbar />
       <CategoryTabs
         active={activeCategory}
         onSelect={setActiveCategory}
@@ -600,6 +529,12 @@ export default function SoukCompassPage() {
         ))}
 
       </div>
+
+      {/* ── Join CTA + Footer ────────────────────────────────────────── */}
+      <LuxColorCtx.Provider value={lc}>
+        <LuxJoinSection />
+        <LuxFooterBar />
+      </LuxColorCtx.Provider>
     </div>
   );
 }

@@ -8,7 +8,8 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { useState, useEffect, useRef, useMemo, memo, createContext, useContext } from "react";
+import { useState, useEffect, useRef, useMemo, memo, useContext } from "react";
+import { C, CL, type ColorTokens, LuxColorCtx, F, fadeEase, LUX_JOIN_FOOTER_CSS } from "@/lib/luxShared";
 import { motion, AnimatePresence, useReducedMotion } from "framer-motion";
 import { useTranslation } from "react-i18next";
 import { Link } from "wouter";
@@ -164,48 +165,6 @@ const SECTION_CSS = `
   .amz-arrow-btn:hover { opacity: 0.75; }
 `;
 
-/* ─── Brand tokens — DARK (default) ──────────────────────────────────────────
-   Site-wide green accent: #16A34A (confirmed in LuxuryNavbar GREEN constant
-   and throughout badges/icons/interactive elements site-wide).
-   greenAlpha / greenGlow are alpha variants of the same hue.                */
-const C = {
-  bg:         "#1A1A1A",   /* hsl(0 0% 10%) — site-wide --background dark token (index.css line 225) */
-  card:       "#242424",   /* hsl(0 0% 14%) — site-wide --card dark token; elevated above new bg */
-  card2:      "#202020",   /* midpoint between bg and card, preserves three-level elevation */
-  white:      "#FFFFFF",
-  offWhite:   "#F2F2F0",
-  muted:      "rgba(255,255,255,0.52)",
-  dimmed:     "rgba(255,255,255,0.28)",
-  border:     "rgba(255,255,255,0.08)",
-  borderHov:  "rgba(255,255,255,0.16)",
-  green:      "#16A34A",
-  greenAlpha: "rgba(22,163,74,0.16)",
-  greenGlow:  "rgba(22,163,74,0.28)",
-} as const;
-
-/* ─── Brand tokens — LIGHT ────────────────────────────────────────────────────
-   Every value traceable to existing site-wide tokens in index.css :root.
-   background  hsl(210 20% 98%) ≈ #F8FAFC
-   card        hsl(0 0% 100%)   = #FFFFFF
-   card2       hsl(220 22% 96%) ≈ #EEF0F7 (--section-alt)
-   foreground  hsl(221 39% 11%) ≈ #111827 (--foreground)
-   muted-fg    hsl(220 13% 32%) ≈ #3D4554 (--muted-foreground)
-   border      hsl(220 13% 84%) ≈ #D1D4E0 (--border)
-   green / greenAlpha / greenGlow — site-wide accent, unchanged.             */
-const CL = {
-  bg:         "#F8FAFC",
-  card:       "#FFFFFF",
-  card2:      "#EEF0F7",
-  white:      "#111827",
-  offWhite:   "#111827",
-  muted:      "#3D4554",
-  dimmed:     "rgba(17,24,39,0.50)",
-  border:     "#D1D4E0",
-  borderHov:  "rgba(17,24,39,0.22)",
-  green:      "#16A34A",
-  greenAlpha: "rgba(22,163,74,0.10)",
-  greenGlow:  "rgba(22,163,74,0.14)",
-} as const;
 
 /* ─── Amazon palette — used for mid-page sections (widget/carousel/stores) ───
    Exactly matches Amazon.com: #EAEDED gray page, white panels, near-black text,
@@ -223,19 +182,6 @@ const CA = {
   green:      "#007185",
   greenAlpha: "rgba(0,113,133,0.08)",
   greenGlow:  "rgba(0,113,133,0.15)",
-} as const;
-
-/* ─── Color token type — string-valued so both C (dark) and CL (light) fit ─*/
-type ColorTokens = { [K in keyof typeof C]: string };
-
-/* ─── Color context — consumed by all sub-components ────────────────────────
-   Defaults to dark tokens; LuxuryLandingPage overrides via resolvedTheme.   */
-const LuxColorCtx = createContext<ColorTokens>(C as ColorTokens);
-
-/* ─── Fonts ───────────────────────────────────────────────────────────────────*/
-const F = {
-  naskh: "'Noto Naskh Arabic', serif",
-  sans:  "'Noto Sans Arabic', sans-serif",
 } as const;
 
 /* ─── Interfaces ──────────────────────────────────────────────────────────────*/
@@ -389,7 +335,6 @@ const WIDGET_PANELS = [
 
 /* ─── Motion spring ───────────────────────────────────────────────────────────*/
 const SPRING: [number, number, number, number] = [0.16, 1, 0.3, 1];
-const fadeEase = [0.25, 0.46, 0.45, 0.94] as const;
 
 const fromBottom = { opacity: 0, scale: 0.91, y: 54  };
 const fromTop    = { opacity: 0, scale: 0.91, y: -54 };
@@ -926,7 +871,7 @@ const AmzNewArrivalsSection = memo(function AmzNewArrivalsSection({ products }: 
 });
 
 /* ── 6. Join Section — full-bleed two-column split ───────────────────────────*/
-const LuxJoinSection = memo(function LuxJoinSection() {
+export const LuxJoinSection = memo(function LuxJoinSection() {
   const { t, i18n } = useTranslation();
   const { handleOpenYourStore } = useSellerOnboarding();
   const { handleBecomeCourier } = useCourierOnboarding();
@@ -1064,7 +1009,7 @@ const LUX_LEGAL_LINKS = [
   { labelKey: "home.footer.link_returns", href: "/returns-policy" },
 ];
 
-const LuxFooterBar = memo(function LuxFooterBar() {
+export const LuxFooterBar = memo(function LuxFooterBar() {
   const { t, i18n } = useTranslation();
   const colors = useContext(LuxColorCtx);
   const [email, setEmail] = useState("");

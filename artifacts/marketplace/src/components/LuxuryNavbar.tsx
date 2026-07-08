@@ -401,20 +401,6 @@ export function LuxuryNavbar() {
         .syano-icon-btn:hover { transform: scale(1.08) !important; }
         .syano-icon-btn:active { transform: scale(0.94) !important; }
 
-        /* Logo text — gradient changes atomically via CSS class, not React state */
-        .syano-logo-text {
-          display: inline-block;
-          background: linear-gradient(135deg, #0f172a 0%, #15803d 100%);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          background-clip: text;
-        }
-        html.dark .syano-logo-text {
-          background: linear-gradient(135deg, #ffffff 0%, #bbf7d0 100%);
-          -webkit-background-clip: text;
-          -webkit-text-fill-color: transparent;
-          background-clip: text;
-        }
       `}</style>
 
       {/* Floating header — fixed to viewport top */}
@@ -446,18 +432,13 @@ export function LuxuryNavbar() {
             dir={isRtl ? "rtl" : "ltr"}
           >
             {/* Logo */}
-            <Link href="/" className="flex items-center gap-2 shrink-0" aria-label="Syano home">
+            <Link href="/" className="flex items-center shrink-0" aria-label="Syano home">
               <img
-                src="/syano-logo.png" alt="" width={40} height={40}
+                src="/syano-logo.png" alt="" width={44} height={44}
                 className="object-contain shrink-0"
-                style={{ height: 40, width: 40, filter: isDark ? "drop-shadow(0 0 10px rgba(34,197,94,0.25))" : "drop-shadow(0 2px 6px rgba(0,0,0,0.15))" }}
+                style={{ height: 44, width: 44, filter: isDark ? "drop-shadow(0 0 10px rgba(34,197,94,0.25))" : "drop-shadow(0 2px 6px rgba(0,0,0,0.15))" }}
                 loading="eager"
               />
-              <span className="syano-logo-text" style={{
-                fontFamily: F_NASKH, fontWeight: 900, letterSpacing: "0.12em", fontSize: "1.375rem", lineHeight: 1,
-              }}>
-                SYANO
-              </span>
             </Link>
 
             {/* Right icons */}
@@ -561,21 +542,15 @@ export function LuxuryNavbar() {
                 style={{
                   display: "flex",
                   alignItems: "center",
-                  gap: "0.5rem",
                   textDecoration: "none",
                 }}
                 aria-label="Syano home"
               >
                 <img
-                  src="/syano-logo.png" alt="Syano" width={44} height={44}
-                  style={{ height: 44, width: 44, objectFit: "contain", flexShrink: 0, filter: isDark ? "drop-shadow(0 0 12px rgba(34,197,94,0.28))" : "drop-shadow(0 2px 8px rgba(0,0,0,0.14))" }}
+                  src="/syano-logo.png" alt="Syano" width={48} height={48}
+                  style={{ height: 48, width: 48, objectFit: "contain", flexShrink: 0, filter: isDark ? "drop-shadow(0 0 12px rgba(34,197,94,0.28))" : "drop-shadow(0 2px 8px rgba(0,0,0,0.14))" }}
                   loading="eager"
                 />
-                <span className="syano-logo-text" style={{
-                  fontFamily: F_NASKH, fontWeight: 900, letterSpacing: "0.13em", fontSize: "1.5rem", lineHeight: 1,
-                }}>
-                  SYANO
-                </span>
               </a>
 
               {/* Location selector */}
